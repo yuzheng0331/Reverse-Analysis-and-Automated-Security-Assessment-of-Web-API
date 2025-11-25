@@ -1,0 +1,9 @@
+requests
+beautifulsoup4
+pycryptodome
+playwright
+rich
+pyyaml
+pytest
+# 可选依赖
+jsbeautifier

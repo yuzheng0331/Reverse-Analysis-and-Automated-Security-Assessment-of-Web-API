@@ -1,0 +1,42 @@
+{
+  "captured_at": "2025-11-25T07:15:17.332520+00:00",
+  "total_requests": 1,
+  "requests": [
+    {
+      "timestamp": "2025-11-25T07:15:17.332531+00:00",
+      "request": {
+        "method": "POST",
+        "url": "https://api.example.com/v1/login",
+        "headers": {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+          "X-Request-ID": "placeholder-request-id"
+        },
+        "body": {
+          "username": "test_user",
+          "password": "PLACEHOLDER_ENCRYPTED_PASSWORD",
+          "timestamp": "1700000000000",
+          "sign": "PLACEHOLDER_SIGNATURE_HASH"
+        }
+      },
+      "response": {
+        "status_code": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Crypto-Version": "AES-256-CBC"
+        },
+        "body_preview": "{\"code\": 0, \"data\": {\"token\": \"PLACEHOLDER_JWT_TOKEN\"}}",
+        "elapsed_ms": 150.5
+      },
+      "metadata": {
+        "capture_method": "manual",
+        "notes": "Sample login request with encrypted parameters",
+        "crypto_indicators": [
+          "sign parameter (possible HMAC/MD5)",
+          "encrypted password field",
+          "X-Crypto-Version header"
+        ]
+      }
+    }
+  ]
+}

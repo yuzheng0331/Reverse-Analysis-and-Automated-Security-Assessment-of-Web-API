@@ -1,0 +1,186 @@
+# =============================================================================
+# Pipeline Phase Configuration
+# =============================================================================
+# Configuration for all phases of the API security assessment pipeline
+# =============================================================================
+
+# Global settings
+global:
+  project_name: "API Security Assessment"
+  version: "0.1.0"
+  log_level: "INFO"
+  output_base: "./output"
+
+# -----------------------------------------------------------------------------
+# Phase 0: Environment Setup
+# -----------------------------------------------------------------------------
+phase0:
+  name: "Environment Setup"
+  description: "Initialize development environment and dependencies"
+  scripts:
+    - scripts/setup_env.sh
+    - scripts/setup_env.ps1
+  checks:
+    - python_version: ">=3.8"
+    - playwright_installed: true
+  outputs: []
+
+# -----------------------------------------------------------------------------
+# Phase 1: Baseline Capture
+# -----------------------------------------------------------------------------
+phase1:
+  name: "Baseline Capture"
+  description: "Capture baseline API requests and responses"
+  script: scripts/capture_baseline.py
+  inputs:
+    target_url: "${TARGET_URL}"
+    # Or specify in configs/api_config.yaml
+  outputs:
+    - baseline_samples/
+  options:
+    timeout: 30
+    capture_method: "requests"  # or "playwright"
+    save_format: "json"
+
+# -----------------------------------------------------------------------------
+# Phase 2: JavaScript Collection
+# -----------------------------------------------------------------------------
+phase2:
+  name: "JavaScript Collection"
+  description: "Collect JavaScript files from target application"
+  script: collect/fetch_js.py
+  inputs:
+    target_url: "${TARGET_URL}"
+  outputs:
+    - collected_js/
+  options:
+    download_external: true
+    extract_inline: true
+    follow_imports: true
+    max_depth: 3
+
+# -----------------------------------------------------------------------------
+# Phase 3: JavaScript Parsing
+# -----------------------------------------------------------------------------
+phase3:
+  name: "JavaScript Parsing"
+  description: "Parse JavaScript for crypto patterns using AST analysis"
+  script: collect/parse_js.py
+  inputs:
+    - collected_js/
+  outputs:
+    - analysis_results/
+  options:
+    detect_crypto: true
+    extract_functions: true
+    map_api_calls: true
+
+# -----------------------------------------------------------------------------
+# Phase 4: Crypto Detection
+# -----------------------------------------------------------------------------
+phase4:
+  name: "Crypto Detection"
+  description: "Detect and analyze cryptographic implementations"
+  script: analysis/detect_crypto.py
+  inputs:
+    parse_results: analysis_results/
+    baseline_samples: baseline_samples/
+  outputs:
+    - crypto_analysis/
+  options:
+    signature_db: configs/signatures.json
+    analyze_params: true
+    assess_security: true
+
+# -----------------------------------------------------------------------------
+# Phase 5: Request Replay
+# -----------------------------------------------------------------------------
+phase5:
+  name: "Request Replay"
+  description: "Replay captured requests with crypto transformations"
+  script: replay/replay_request.py
+  inputs:
+    baseline: baseline_samples/
+  outputs:
+    - replay_results/
+  options:
+    transforms:
+      - update_timestamp
+      - regenerate_sign
+    compare_responses: true
+
+# -----------------------------------------------------------------------------
+# Phase 6: Parameter Mutation
+# -----------------------------------------------------------------------------
+phase6:
+  name: "Parameter Mutation"
+  description: "Generate parameter mutations for security testing"
+  script: replay/mutate_params.py
+  inputs:
+    baseline: baseline_samples/
+  outputs:
+    - mutations/
+  strategies:
+    - boundary
+    - type_confusion
+    - injection
+    - crypto
+    - encoding
+    - empty_null
+
+# -----------------------------------------------------------------------------
+# Phase 7: Security Assessment
+# -----------------------------------------------------------------------------
+phase7:
+  name: "Security Assessment"
+  description: "Assess endpoint security based on analysis results"
+  script: assess/assess_endpoint.py
+  inputs:
+    detection: crypto_analysis/
+  outputs:
+    - assessment_results/
+  checks:
+    - crypto_weaknesses
+    - hardcoded_secrets
+    - injection_vulnerabilities
+    - authentication_flaws
+
+# -----------------------------------------------------------------------------
+# Phase 8: Report Generation
+# -----------------------------------------------------------------------------
+phase8:
+  name: "Report Generation"
+  description: "Generate comprehensive security assessment reports"
+  script: assess/report_gen.py
+  inputs:
+    assessment: assessment_results/
+  outputs:
+    - reports/
+  formats:
+    - html
+    - markdown
+    - json
+
+# -----------------------------------------------------------------------------
+# Pipeline Execution Order
+# -----------------------------------------------------------------------------
+pipeline:
+  sequence:
+    - phase0  # Setup
+    - phase1  # Baseline Capture
+    - phase2  # JS Collection
+    - phase3  # JS Parsing
+    - phase4  # Crypto Detection
+    - phase5  # Request Replay
+    - phase6  # Parameter Mutation
+    - phase7  # Security Assessment
+    - phase8  # Report Generation
+  
+  # Dependencies (phases that must complete before starting)
+  dependencies:
+    phase3: [phase2]
+    phase4: [phase3, phase1]
+    phase5: [phase4]
+    phase6: [phase1]
+    phase7: [phase4, phase5, phase6]
+    phase8: [phase7]
