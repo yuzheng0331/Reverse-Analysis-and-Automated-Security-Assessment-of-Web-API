@@ -19,6 +19,8 @@ import hashlib
 import os
 import re
 import sys
+import importlib
+import importlib.util
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -27,6 +29,16 @@ from urllib.parse import urljoin, urlparse
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Optional: load .env from repo root if python-dotenv is installed (do not require it)
+if importlib.util.find_spec("dotenv"):
+    _dotenv = importlib.import_module("dotenv")
+    try:
+        _dotenv.load_dotenv(Path(__file__).parent.parent / ".env")
+    except Exception:
+        # If loading fails for any reason, continue without failing the script
+        pass
+
+# Required third-party imports
 try:
     import requests
     from bs4 import BeautifulSoup
@@ -333,10 +345,11 @@ Examples:
         """
     )
     
+    # Make --url optional: if not provided, fall back to environment variables (TARGET_URL or TARGET_API_BASE)
     parser.add_argument(
         "--url",
-        required=True,
-        help="Target URL to collect JavaScript from"
+        required=False,
+        help="Target URL to collect JavaScript from (or set TARGET_URL in .env / environment)"
     )
     parser.add_argument(
         "--output",
@@ -352,11 +365,16 @@ Examples:
     )
     
     args = parser.parse_args()
-    
+
+    # Determine effective URL: CLI arg > environment TARGET_URL > TARGET_API_BASE
+    url = args.url or os.environ.get("TARGET_URL") or os.environ.get("TARGET_API_BASE")
+    if not url:
+        parser.error("No target URL specified. Provide --url or set TARGET_URL in your environment/.env")
+
     console.print("[bold cyan]═══ JavaScript Collector ═══[/bold cyan]\n")
     
     collector = JSCollector(output_dir=args.output, timeout=args.timeout)
-    collector.collect_from_url(args.url)
+    collector.collect_from_url(url)
     collector.display_summary()
     collector.save_collected()
 
