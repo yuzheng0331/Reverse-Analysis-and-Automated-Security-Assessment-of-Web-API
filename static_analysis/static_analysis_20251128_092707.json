@@ -1,0 +1,497 @@
+{
+  "target_url": "http://encrypt-labs-main/easy.php",
+  "analyzed_at": "2025-11-28T09:27:05.835468+00:00",
+  "summary": {
+    "total_files": 4,
+    "total_endpoints": 8,
+    "total_crypto_patterns": 35,
+    "total_functions": 1258,
+    "total_security_findings": 2
+  },
+  "collected_files": [
+    {
+      "type": "external",
+      "url": "http://encrypt-labs-main/js/crypto-js.min.js",
+      "size": 48278
+    },
+    {
+      "type": "external",
+      "url": "http://encrypt-labs-main/js/jsencrypt.min.js",
+      "size": 55323
+    },
+    {
+      "type": "external",
+      "url": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "size": 288021
+    },
+    {
+      "type": "external",
+      "url": "http://encrypt-labs-main/js/easy.js",
+      "size": 10546
+    }
+  ],
+  "endpoints": [
+    {
+      "url": "http://encrypt-labs-main/encrypt/aes.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendDataAes"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/aesserver.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "fetchAndSendDataAes"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/rsa.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendEncryptedDataRSA"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/aesrsa.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendDataAesRsa"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/des.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "encryptAndSendDataDES"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/signdata.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendDataWithNonce"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/signdataserver.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendDataWithNonceServer"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/norepeater.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendLoginRequest"
+    }
+  ],
+  "crypto_patterns": [
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "js/crypto-js.min.js",
+      "line": 7,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "encrypt",
+      "file": "js/jsencrypt.min.js",
+      "line": 2,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "encrypt",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "encrypt",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "encrypt",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "decrypt",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "encrypt",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "encrypt",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "start",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "encrypt",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "decrypt",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "afterFinish",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "createClientKeyExchange",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "line": 1,
+      "weakness": null
+    },
+    {
+      "library": "CryptoJS",
+      "algorithm": "AES",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 20,
+      "weakness": null
+    },
+    {
+      "library": "CryptoJS",
+      "algorithm": "AES",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 116,
+      "weakness": null
+    },
+    {
+      "library": "CryptoJS",
+      "algorithm": "AES",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 181,
+      "weakness": null
+    },
+    {
+      "library": "CryptoJS",
+      "algorithm": "HMAC",
+      "operation": "sign",
+      "function_name": "sendDataWithNonce",
+      "file": "js/easy.js",
+      "line": 269,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "init",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 70,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "init",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 123,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "init",
+      "function_name": "generateRequestData",
+      "file": "js/easy.js",
+      "line": 378,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 20,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 73,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 116,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 131,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 132,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 181,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "encryptAndSendDataDES",
+      "file": "js/easy.js",
+      "line": 223,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt",
+      "function_name": "generateRequestData",
+      "file": "js/easy.js",
+      "line": 380,
+      "weakness": null
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "setkey",
+      "function_name": "anonymous",
+      "file": "js/easy.js",
+      "line": 124,
+      "weakness": null
+    },
+    {
+      "library": "CryptoJS",
+      "algorithm": "DES",
+      "operation": "encrypt",
+      "function_name": "encryptAndSendDataDES",
+      "file": "js/easy.js",
+      "line": 223,
+      "weakness": null
+    },
+    {
+      "library": "N/A",
+      "algorithm": "N/A",
+      "operation": "hardcoded_secret",
+      "function_name": "sendDataWithNonce",
+      "file": "js/easy.js",
+      "line": 266,
+      "weakness": "HARDCODED_KEY"
+    }
+  ],
+  "endpoint_crypto_map": {
+    "http://encrypt-labs-main/encrypt/aes.php": {
+      "trigger_function": "sendDataAes",
+      "crypto": [
+        {
+          "call": "CryptoJS.AES.encrypt"
+        },
+        {
+          "call": ".encrypt("
+        }
+      ]
+    },
+    "http://encrypt-labs-main/encrypt/aesserver.php": {
+      "trigger_function": "fetchAndSendDataAes",
+      "crypto": [
+        {
+          "call": "CryptoJS.AES.encrypt"
+        },
+        {
+          "call": ".encrypt("
+        }
+      ]
+    },
+    "http://encrypt-labs-main/encrypt/rsa.php": {
+      "trigger_function": "sendEncryptedDataRSA",
+      "crypto": [
+        {
+          "call": ".encrypt("
+        }
+      ]
+    },
+    "http://encrypt-labs-main/encrypt/aesrsa.php": {
+      "trigger_function": "sendDataAesRsa",
+      "crypto": [
+        {
+          "call": "CryptoJS.AES.encrypt"
+        },
+        {
+          "call": ".encrypt("
+        }
+      ]
+    },
+    "http://encrypt-labs-main/encrypt/des.php": {
+      "trigger_function": "encryptAndSendDataDES",
+      "crypto": [
+        {
+          "library": "JSEncrypt",
+          "algorithm": "RSA",
+          "operation": "encrypt"
+        },
+        {
+          "library": "CryptoJS",
+          "algorithm": "DES",
+          "operation": "encrypt"
+        },
+        {
+          "call": "CryptoJS.DES.encrypt"
+        },
+        {
+          "call": ".encrypt("
+        }
+      ]
+    },
+    "http://encrypt-labs-main/encrypt/signdata.php": {
+      "trigger_function": "sendDataWithNonce",
+      "crypto": [
+        {
+          "library": "CryptoJS",
+          "algorithm": "HMAC",
+          "operation": "sign"
+        },
+        {
+          "library": "N/A",
+          "algorithm": "N/A",
+          "operation": "hardcoded_secret"
+        }
+      ]
+    }
+  },
+  "security_findings": [
+    {
+      "type": "WEAK_ALGORITHM",
+      "severity": "MEDIUM",
+      "algorithm": "DES",
+      "file": "js/easy.js",
+      "line": 223,
+      "description": "使用了弱加密算法 DES"
+    },
+    {
+      "type": "HARDCODED_KEY",
+      "severity": "HIGH",
+      "file": "js/easy.js",
+      "line": 266,
+      "context": "\n\tconst secretKey = \"be56e057f20f883e\";\n\n\tconst dataToSign = username + password + nonce + timestamp;",
+      "description": "检测到 HARDCODED_KEY 在 js/easy.js:266"
+    }
+  ]
+}

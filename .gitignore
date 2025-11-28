@@ -66,7 +66,7 @@ Thumbs.db
 # Project Specific - Output Directories
 # -----------------------------------------------------------------------------
 # These directories contain generated output and should not be committed
-collected_js/
+#collected_js/
 analysis_results/
 crypto_analysis/
 replay_results/

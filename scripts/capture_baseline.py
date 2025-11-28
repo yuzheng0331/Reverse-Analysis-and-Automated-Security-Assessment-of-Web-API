@@ -63,7 +63,7 @@ class BaselineCapture:
         
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     def capture_simple(self, url: str, method: str = "GET", **kwargs) -> dict[str, Any]:
         """
         Capture a simple HTTP request using the requests library.
@@ -72,12 +72,12 @@ class BaselineCapture:
             url: Target URL
             method: HTTP method (GET, POST, etc.)
             **kwargs: Additional arguments passed to requests
-            
+
         Returns:
             Dictionary containing request/response details
         """
         console.print(f"[cyan]Capturing request to:[/cyan] {url}")
-        
+
         try:
             response = requests.request(
                 method=method,
@@ -85,7 +85,7 @@ class BaselineCapture:
                 timeout=self.timeout,
                 **kwargs
             )
-            
+
             captured = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "request": {
@@ -105,11 +105,11 @@ class BaselineCapture:
                     "timeout": self.timeout,
                 }
             }
-            
+
             self.captured_requests.append(captured)
             console.print(f"[green]✓ Captured:[/green] {response.status_code} - {len(response.content)} bytes")
             return captured
-            
+
         except requests.RequestException as e:
             console.print(f"[red]✗ Request failed:[/red] {e}")
             return {"error": str(e), "url": url}
@@ -132,28 +132,28 @@ class BaselineCapture:
         console.print("[dim]TODO: Implement browser-based request capture[/dim]")
         
         # Example implementation structure:
-        # from playwright.async_api import async_playwright
-        #
-        # async with async_playwright() as p:
-        #     browser = await p.chromium.launch()
-        #     page = await browser.new_page()
-        #     
-        #     captured = []
-        #     
-        #     async def handle_request(request):
-        #         captured.append({
-        #             "url": request.url,
-        #             "method": request.method,
-        #             "headers": request.headers,
-        #             "post_data": request.post_data,
-        #         })
-        #     
-        #     page.on("request", handle_request)
-        #     await page.goto(url)
-        #     await page.wait_for_load_state("networkidle")
-        #     
-        #     await browser.close()
-        #     return captured
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+
+            captured = []
+
+            async def handle_request(request):
+                captured.append({
+                    "url": request.url,
+                    "method": request.method,
+                    "headers": request.headers,
+                    "post_data": request.post_data,
+                })
+
+            page.on("request", handle_request)
+            await page.goto(url)
+            await page.wait_for_load_state("networkidle")
+
+            await browser.close()
+            return captured
         
         return []
     
@@ -319,7 +319,7 @@ Examples:
         default=DEFAULT_TIMEOUT,
         help=f"Request timeout in seconds (default: {DEFAULT_TIMEOUT})"
     )
-    
+
     args = parser.parse_args()
     
     console.print("[bold cyan]═══ Baseline Capture Tool ═══[/bold cyan]\n")
@@ -334,7 +334,7 @@ Examples:
         create_sample_baseline()
         console.print("\n[dim]Use --url to capture a real endpoint[/dim]")
         return
-    
+
     capture = BaselineCapture(output_dir=args.output, timeout=args.timeout)
     capture.capture_simple(args.url, method=args.method)
     capture.display_summary()

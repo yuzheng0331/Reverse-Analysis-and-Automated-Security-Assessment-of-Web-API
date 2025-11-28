@@ -368,27 +368,27 @@ class CryptoDetector:
     ) -> DetectionResult:
         """
         Run full crypto detection analysis.
-        
+
         Args:
             parse_results_dir: Directory with JS parse results
             baseline_dir: Directory with baseline samples
-            
+
         Returns:
             Complete detection result
         """
         console.print("[cyan]Starting crypto detection analysis...[/cyan]\n")
-        
+
         # Analyze JS parsing results
         for result_file in parse_results_dir.glob("parse_results_*.json"):
             console.print(f"  Analyzing: {result_file.name}")
             findings = self.analyze_parse_results(result_file)
             self.result.findings.extend(findings)
-        
+
         # Analyze baseline samples
         console.print(f"\n  Analyzing baseline samples from: {baseline_dir}")
         endpoints = self.analyze_baseline(baseline_dir)
         self.result.api_endpoints = endpoints
-        
+
         # Build crypto map
         for endpoint in endpoints:
             url = endpoint.get("url", "unknown")
@@ -396,9 +396,9 @@ class CryptoDetector:
                 self.result.crypto_map[url] = []
             for indicator in endpoint.get("crypto_indicators", []):
                 self.result.crypto_map[url].append(indicator.get("type", "unknown"))
-        
+
         return self.result
-    
+
     def save_results(self, filename: Optional[str] = None) -> Path:
         """Save detection results to JSON."""
         if not filename:

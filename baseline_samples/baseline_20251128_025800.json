@@ -1,0 +1,37 @@
+{
+  "captured_at": "2025-11-28T02:58:00.598421+00:00",
+  "total_requests": 1,
+  "requests": [
+    {
+      "timestamp": "2025-11-28T02:58:00.595669+00:00",
+      "request": {
+        "method": "GET",
+        "url": "http://encrypt-labs-main/easy.php",
+        "headers": {
+          "User-Agent": "python-requests/2.32.5",
+          "Accept-Encoding": "gzip, deflate",
+          "Accept": "*/*",
+          "Connection": "keep-alive"
+        },
+        "body": null
+      },
+      "response": {
+        "status_code": 200,
+        "headers": {
+          "Server": "nginx/1.25.2",
+          "Date": "Fri, 28 Nov 2025 02:58:00 GMT",
+          "Content-Type": "text/html; charset=UTF-8",
+          "Transfer-Encoding": "chunked",
+          "Connection": "keep-alive",
+          "X-Powered-By": "PHP/7.3.4"
+        },
+        "body_preview": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>encrypt靶场</title>\n  <script src=\"js/crypto-js.min.js\"></script> <!-- 引入 CryptoJS 库 -->\n  <script src=\"js/jsencrypt.min.js\"></script> <!-- 引入 JSEncrypt 库 -->\n  <script src=\"https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js\"></script>\n\n\n\n  <link rel=\"stylesheet\" href=\"css/index.css\"> <!-- 引入本地的 CSS 文件 -->\n  <style>\n    /* 弹窗样式 */\n    .modal {\n      display: none; /* 默认隐藏 */\n      position: fixed;\n      top: 0;\n      left: 0;\n      width: 100%;\n      height: 100%;\n      background-color: rgba(0, 0, 0, 0.6); /* 半透明背景 */\n      justify-content: center;\n      align-items: center;\n      z-index: 2; /* 确保弹窗显示在登录框上方 */\n    }\n\n    .modal-content {\n      background-color: #ffffff;\n      padding: 30px;\n      border-radius: 12px; /* 增加圆角 */\n      text-align: center;\n      width: 320px;\n      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15); /*",
+        "elapsed_ms": 17.305999999999997
+      },
+      "metadata": {
+        "capture_method": "requests",
+        "timeout": 30
+      }
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "collected_at": "2025-11-27T11:48:47.662400+00:00",
+  "total_scripts": 4,
+  "scripts": [
+    {
+      "index": 0,
+      "source": "external",
+      "crypto_hints": [
+        "CryptoJS",
+        "crypto-js",
+        "HMAC",
+        "Base64",
+        "encrypt",
+        "decrypt"
+      ],
+      "url": "http://encrypt-labs-main/js/crypto-js.min.js",
+      "saved_as": "000_crypto-js.min.js",
+      "size_bytes": 48278
+    },
+    {
+      "index": 1,
+      "source": "external",
+      "crypto_hints": [
+        "Base64",
+        "JSEncrypt",
+        "sign",
+        "encrypt",
+        "decrypt"
+      ],
+      "url": "http://encrypt-labs-main/js/jsencrypt.min.js",
+      "saved_as": "001_jsencrypt.min.js",
+      "size_bytes": 55323
+    },
+    {
+      "index": 2,
+      "source": "external",
+      "crypto_hints": [
+        "AES",
+        "RSA",
+        "HMAC",
+        "Base64",
+        "forge",
+        "WebCrypto",
+        "sign",
+        "encrypt",
+        "decrypt"
+      ],
+      "url": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "saved_as": "002_forge.min.js",
+      "size_bytes": 288021
+    },
+    {
+      "index": 3,
+      "source": "external",
+      "crypto_hints": [
+        "CryptoJS",
+        "HMAC",
+        "Base64",
+        "JSEncrypt"
+      ],
+      "url": "http://encrypt-labs-main/js/app.js",
+      "saved_as": "003_app.js",
+      "size_bytes": 13198
+    }
+  ]
+}

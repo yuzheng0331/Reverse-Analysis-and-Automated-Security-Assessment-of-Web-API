@@ -22,15 +22,15 @@ Write-Host "=============================================" -ForegroundColor Cyan
 # -----------------------------------------------------------------------------
 $CONFIG = @{
     # TODO: Update these paths to match your local environment
-    PhpStudyPath    = "C:\phpstudy_pro\COM\phpstudy_pro.exe"  # Placeholder
-    NginxPath       = "C:\nginx\nginx.exe"                     # Placeholder
-    PythonPath      = "python"                                 # or "python3"
-    VenvPath        = ".\.venv"
+    PhpStudyPath    = "E:\phpStudy\phpstudy_pro\COM\phpstudy_pro.exe"  # Placeholder
+    NginxPath       = "E:\phpStudy\phpstudy_pro\Extensions\Nginx1.25.2\nginx.exe"    # Placeholder
+    PythonPath      = "D:\Reverse Analysis and Automated Security Assessment of Web API\.venv\Scripts\python.exe"     # or "python3"
+    VenvPath        = "..\.venv"
     
     # Database connectivity placeholders
     DbHost          = $env:DB_HOST ?? "localhost"
     DbPort          = $env:DB_PORT ?? "3306"
-    DbName          = $env:DB_NAME ?? "api_assessment"
+    DbName          = $env:DB_NAME ?? "encryptdb"
     DbUser          = $env:DB_USER ?? "root"
     # Note: DB_PASSWORD should be in .env file, never hardcoded
 }
@@ -81,21 +81,7 @@ function Initialize-VirtualEnvironment {
 # -----------------------------------------------------------------------------
 function Start-WebServer {
     Write-Host "`n[3/5] Checking web server..." -ForegroundColor Yellow
-    
-    # TODO: Uncomment and configure for your environment
-    # Option 1: phpStudy
-    # if (Test-Path $CONFIG.PhpStudyPath) {
-    #     Write-Host "  Starting phpStudy..."
-    #     Start-Process $CONFIG.PhpStudyPath -ArgumentList "start"
-    #     Write-Host "  ✓ phpStudy started" -ForegroundColor Green
-    # }
-    
-    # Option 2: nginx
-    # if (Test-Path $CONFIG.NginxPath) {
-    #     Write-Host "  Starting nginx..."
-    #     Start-Process $CONFIG.NginxPath
-    #     Write-Host "  ✓ nginx started" -ForegroundColor Green
-    # }
+
     
     Write-Host "  ⚠ Web server setup skipped (configure paths in script)" -ForegroundColor Yellow
 }
@@ -110,28 +96,7 @@ function Test-DatabaseConnection {
     }
     
     Write-Host "`n[4/5] Checking database connectivity..." -ForegroundColor Yellow
-    
-    # TODO: Implement actual database connectivity check
-    # Example using Python:
-    # $checkScript = @"
-    # import os
-    # import sys
-    # try:
-    #     import pymysql
-    #     conn = pymysql.connect(
-    #         host=os.getenv('DB_HOST', 'localhost'),
-    #         port=int(os.getenv('DB_PORT', 3306)),
-    #         user=os.getenv('DB_USER', 'root'),
-    #         password=os.getenv('DB_PASSWORD', ''),
-    #         database=os.getenv('DB_NAME', 'api_assessment')
-    #     )
-    #     conn.close()
-    #     print('OK')
-    # except Exception as e:
-    #     print(f'FAIL: {e}')
-    #     sys.exit(1)
-    # "@
-    # $result = & $CONFIG.PythonPath -c $checkScript
+
     
     Write-Host "  ⚠ Database check placeholder (configure connection)" -ForegroundColor Yellow
     return $true
@@ -142,15 +107,7 @@ function Test-DatabaseConnection {
 # -----------------------------------------------------------------------------
 function Install-PlaywrightBrowsers {
     Write-Host "`n[5/5] Setting up Playwright browsers..." -ForegroundColor Yellow
-    
-    try {
-        & $CONFIG.PythonPath -m playwright install chromium
-        Write-Host "  ✓ Playwright browsers installed" -ForegroundColor Green
-    }
-    catch {
-        Write-Host "  ⚠ Playwright setup failed: $_" -ForegroundColor Yellow
-        Write-Host "  Run manually: python -m playwright install" -ForegroundColor Yellow
-    }
+
 }
 
 # -----------------------------------------------------------------------------

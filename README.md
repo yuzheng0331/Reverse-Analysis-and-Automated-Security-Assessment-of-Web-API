@@ -43,26 +43,44 @@ This project provides a skeleton framework for:
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    API Security Assessment Pipeline              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Phase 0: Setup    ─────►  Phase 1: Capture  ─────►  Phase 2: Collect  │
-│  (Environment)            (Baseline)               (JavaScript)        │
-│                                                                  │
-│       │                       │                        │         │
-│       ▼                       ▼                        ▼         │
-│                                                                  │
-│  Phase 3: Parse   ◄─────  Phase 4: Detect  ─────►  Phase 5: Replay    │
-│  (AST Analysis)           (Crypto)                (Requests)          │
-│                                                                  │
-│       │                       │                        │         │
-│       ▼                       ▼                        ▼         │
-│                                                                  │
-│  Phase 6: Mutate  ─────►  Phase 7: Assess  ─────►  Phase 8: Report   │
-│  (Parameters)             (Security)               (Generate)         │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         静态分析阶段（一次完成）                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  static_analyze.py ──────────────► static_analysis.json                 │
+│  (合并 fetch + parse + detect)      (完整的静态分析结果)                 │
+│                                                                         │
+│  输出内容：                                                              │
+│  • 加密库识别（CryptoJS, JSEncrypt...）                                  │
+│  • 加密模式检测（AES, RSA, HMAC...）                                     │
+│  • 函数名提取（sendDataAes, encryptData...）                             │
+│  • API 端点发现（/encrypt/aes.php...）                                   │
+│  • 安全弱点标记（硬编码密钥、弱算法...）                                   │
+│  • 端点-函数-加密 三方映射                                                │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         动态采集阶段                                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  Playwright + Hook ──────────────► baseline_samples/                    │
+│                                                                         │
+│  • 根据静态分析发现的端点，针对性采集                                      │
+│  • Hook 加密函数，捕获明文/密钥/密文                                      │
+│  • 生成真实请求基线                                                      │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         验证与测试阶段                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  Handler 验证 ──► 参数变异 ──► 安全评估 ──► 报告生成                      │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🚀 Installation
@@ -104,7 +122,7 @@ This project provides a skeleton framework for:
 
 5. **Configure environment**
    ```bash
-   cp .env.example .env
+   cp .env .env
    # Edit .env with your configuration
    ```
 
@@ -123,28 +141,21 @@ chmod +x scripts/setup_env.sh
 
 ## ⚡ Quick Start
 
-### 1. Create Sample Baseline
+### 阶段 1: 静态分析（一步完成）
 ```bash
-python scripts/capture_baseline.py --create-sample
+# 分析目标页面，获取完整的静态分析结果
+python collect/static_analyze.py --url http://encrypt-labs-main/easy.php
 ```
 
-### 2. Collect JavaScript (from a URL)
+### 阶段 2: 动态采集（基于静态分析结果）
 ```bash
-python collect/fetch_js.py --url https://example.com
+# 使用 Playwright 捕获真实加密请求
+python scripts/capture_baseline.py --url http://encrypt-labs-main/easy.php
 ```
 
-### 3. Parse for Crypto Patterns
+### 阶段 3: 验证与测试
 ```bash
-python collect/parse_js.py --input collected_js/
-```
-
-### 4. Detect Crypto Implementations
-```bash
-python analysis/detect_crypto.py
-```
-
-### 5. Generate Security Report
-```bash
+# 生成安全报告
 python assess/report_gen.py --format all
 ```
 
@@ -159,61 +170,50 @@ Sets up the development environment including:
 - Playwright browser setup
 - Database connectivity check (optional)
 
-### Phase 1: Baseline Capture
-**Script:** `scripts/capture_baseline.py`
+### Phase 1: 静态分析（Static Analysis）
+**Script:** `collect/static_analyze.py`
 
-Captures baseline API requests using:
-- HTTP requests library for simple capture
-- Playwright for JavaScript-heavy applications
-
-```bash
-# Capture from URL
-python scripts/capture_baseline.py --url https://api.example.com/login
-
-# Create sample baseline
-python scripts/capture_baseline.py --create-sample
-```
-
-### Phase 2: JavaScript Collection
-**Script:** `collect/fetch_js.py`
-
-Collects JavaScript files from web applications:
-- Extracts inline `<script>` content
-- Downloads external JS files
-- Quick-scans for crypto indicators
+一体化静态分析工具，整合了原来的 fetch、parse、detect 功能：
+- 收集 HTML 和 JavaScript 文件
+- 提取 API 端点（从 onclick、form action、JS 代码）
+- 检测加密库和算法（CryptoJS、JSEncrypt、WebCrypto 等）
+- 提取函数定义和调用关系
+- 建立端点 ↔ 函数 ↔ 加密算法的三方映射
+- 标记安全弱点（硬编码密钥、弱算法等）
 
 ```bash
-python collect/fetch_js.py --url https://example.com --output collected_js/
+# 一步完成所有静态分析
+python collect/static_analyze.py --url http://encrypt-labs-main/easy.php
 ```
 
-### Phase 3: JavaScript Parsing
-**Script:** `collect/parse_js.py`
+输出：`static_analysis/static_analysis_YYYYMMDD_HHMMSS.json`，包含完整的静态分析结果。
 
-Parses JavaScript for crypto patterns:
-- Regex-based pattern detection
-- Function name extraction
-- API call mapping
+### Phase 2: 动态采集（Dynamic Capture）
+**Scripts:** `scripts/capture_baseline.py`
+
+基于静态分析结果，使用 Playwright 进行动态采集：
+- 根据发现的端点进行针对性采集
+- Hook 加密函数，捕获明文/密钥/密文
+- 生成真实请求基线样本
 
 ```bash
-python collect/parse_js.py --input collected_js/ --output analysis_results/
+python scripts/capture_baseline.py --url http://encrypt-labs-main/easy.php
 ```
 
-### Phase 4: Crypto Detection
-**Script:** `analysis/detect_crypto.py`
+输出：`baseline_samples/` 目录下的 JSON 文件，包含真实的加密请求。
 
-Analyzes crypto implementations:
-- Algorithm identification
-- Security level assessment
-- Vulnerability detection
+### Phase 3: Handler 验证
+**Script:** `handlers/` 目录下的加密 Handler
 
-```bash
-python analysis/detect_crypto.py --input analysis_results/ --baseline baseline_samples/
-```
+基于静态分析和动态采集的结果，实现本地加密 Handler 并验证：
+- 复现 JS 中的加密逻辑
+- 对比本地输出与真实请求中的密文
+- 验证加密参数的正确性
 
-### Phase 5: Request Replay
+### Phase 4: Request Replay
 **Script:** `replay/replay_request.py`
 
-Replays requests with transformations:
+Replays requests with transformations, consuming baseline entries:
 - Timestamp updates
 - Signature regeneration
 - Response comparison
@@ -222,7 +222,7 @@ Replays requests with transformations:
 python replay/replay_request.py --baseline baseline_samples/sample_request.json
 ```
 
-### Phase 6: Parameter Mutation
+### Phase 5: Parameter Mutation
 **Script:** `replay/mutate_params.py`
 
 Generates parameter mutations for testing:
@@ -266,17 +266,19 @@ python assess/report_gen.py --format all --output reports/
 ├── scripts/                  # Setup and utility scripts
 │   ├── setup_env.ps1         # PowerShell setup script
 │   ├── setup_env.sh          # Bash setup script
-│   └── capture_baseline.py   # Baseline capture tool
+│   └── capture_baseline.py   # Baseline capture tool (Playwright)
 │
-├── collect/                  # JavaScript collection module
+├── collect/                  # 静态分析模块
 │   ├── __init__.py
-│   ├── fetch_js.py           # JS file collector
-│   └── parse_js.py           # JS AST parser
+│   └── static_analyze.py     # 一体化静态分析工具（合并 fetch + parse + detect）
 │
-├── analysis/                 # Crypto analysis module
+├── analysis/                 # 加密分析模块（保留用于高级分析）
 │   ├── __init__.py
-│   ├── detect_crypto.py      # Crypto detection engine
+│   ├── detect_crypto.py      # Crypto detection engine（可选验证）
 │   └── signature_db.py       # Crypto signature database
+│
+├── handlers/                 # 加密 Handler 实现
+│   └── (crypto handlers here)
 │
 ├── replay/                   # Request replay module
 │   ├── __init__.py
@@ -289,14 +291,17 @@ python assess/report_gen.py --format all --output reports/
 │   └── report_gen.py         # Report generator
 │
 ├── configs/                  # Configuration files
-│   ├── api_config.yaml       # API configuration
+│   ├── global.yaml           # Global configuration
 │   └── phases_config.yaml    # Pipeline configuration
 │
-├── baseline_samples/         # Captured baseline requests
-│   └── sample_request.json   # Sample baseline file
+├── static_analysis/          # 静态分析结果输出
+│   └── static_analysis_*.json
+│
+├── baseline_samples/         # 动态采集的基线样本
+│   └── baseline_*.json
 │
 ├── tests/                    # Test files
-│   └── (test files here)
+│   └── test_smoke.py
 │
 ├── docs/                     # Documentation
 │   └── (documentation here)
@@ -333,26 +338,30 @@ Configure pipeline phases, dependencies, and options in the YAML file.
 
 ## 🧪 Usage Examples
 
-### Example 1: Analyze a Login Endpoint
+### Example 1: 完整分析流程
 
 ```bash
-# 1. Capture the login request manually or with the tool
-python scripts/capture_baseline.py --url https://api.example.com/login --method POST
+# 1. 静态分析：一步获取所有加密信息
+python collect/static_analyze.py --url http://encrypt-labs-main/easy.php
 
-# 2. Collect JavaScript from the login page
-python collect/fetch_js.py --url https://example.com/login
+# 2. 动态采集：基于静态分析结果捕获真实请求
+python scripts/capture_baseline.py --url http://encrypt-labs-main/easy.php
 
-# 3. Parse for crypto patterns
-python collect/parse_js.py --input collected_js/
+# 3. 实现并验证 Handler（手动编写，基于静态分析结果）
+# 创建 handlers/cryptojs_aes_handler.py
 
-# 4. Run full analysis
-python analysis/detect_crypto.py
-
-# 5. Generate report
+# 4. 生成报告
 python assess/report_gen.py --format html
 ```
 
-### Example 2: Test Parameter Mutations
+### Example 2: 仅静态分析
+
+```bash
+# 快速分析目标页面的加密实现
+python collect/static_analyze.py --url http://target.com/login.php --output my_analysis/
+```
+
+### Example 3: Test Parameter Mutations
 
 ```bash
 # Generate mutations for login parameters
@@ -409,30 +418,23 @@ After merging this PR, verify the following:
 - [ ] Copy `.env.example` to `.env`
 - [ ] Run setup script without errors
 
-### Phase 0-1: Setup & Capture
-- [ ] `scripts/setup_env.sh` runs without errors (or `.ps1` on Windows)
-- [ ] `python scripts/capture_baseline.py --create-sample` creates `baseline_samples/sample_request.json`
-- [ ] Sample baseline file contains valid JSON structure
+### Phase 1: 静态分析
+- [ ] `python collect/static_analyze.py --url http://target.com` 运行成功
+- [ ] 生成 `static_analysis/static_analysis_*.json` 文件
+- [ ] JSON 包含：端点列表、加密模式、函数信息、端点-加密映射
+- [ ] 识别出常见加密库（CryptoJS、JSEncrypt 等）
+- [ ] 检测到安全弱点（如硬编码密钥、弱算法）
 
-### Phase 2-3: Collection & Parsing
-- [ ] `python collect/fetch_js.py --url https://example.com` collects JavaScript
-- [ ] `python collect/parse_js.py --input collected_js/` generates parse results
-- [ ] Parse results contain crypto pattern matches
+### Phase 2: 动态采集
+- [ ] `python scripts/capture_baseline.py --url http://target.com` 执行成功
+- [ ] 生成 `baseline_samples/baseline_*.json` 文件
+- [ ] 基线样本包含真实的请求和响应数据
 
-### Phase 4: Detection
-- [ ] `python analysis/detect_crypto.py` runs successfully
-- [ ] Detection results include security assessments
-- [ ] Signature database contains default patterns
-
-### Phase 5-6: Replay & Mutation
-- [ ] `python replay/replay_request.py --baseline baseline_samples/sample_request.json` executes
-- [ ] `python replay/mutate_params.py --params '{"test":"value"}'` generates mutations
-- [ ] Mutations include various strategies (injection, crypto, etc.)
-
-### Phase 7-8: Assessment & Reporting
-- [ ] `python assess/assess_endpoint.py` generates assessment results
-- [ ] `python assess/report_gen.py --format html` creates HTML report
-- [ ] Report contains summary, vulnerabilities, and recommendations
+### Phase 3-4: 验证与测试
+- [ ] 基于静态分析结果实现 Handler
+- [ ] Handler 输出与基线样本中的密文一致
+- [ ] `python replay/mutate_params.py --params '{"test":"value"}'` 生成变异
+- [ ] `python assess/report_gen.py --format html` 创建 HTML 报告
 
 ### Code Quality
 - [ ] All Python files have docstrings

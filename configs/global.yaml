@@ -1,0 +1,62 @@
+# yaml
+# configs/global.yml - 全局默认配置（非敏感）
+log:
+  level: INFO
+  file: logs/ra_pipeline.log
+
+storage:
+  root: data
+  collected_js_dir: data/collected_js
+  analysis_results_dir: data/analysis_results
+  baseline_samples_dir: data/baseline_samples
+
+target:
+  url: "https://example.local"   # 默认目标 URL，可被 phase 覆盖或 ENV 覆盖
+
+python:
+  interpreter: python            # 或指定绝对路径
+  venv_path: ./.venv
+  requirements: requirements.txt
+
+playwright:
+  browsers:
+    - chromium
+  headless: true
+  install_on_setup: true
+
+network:
+  timeout_seconds: 30
+  retries: 2
+  proxy: ""                      # 请通过 ENV 注入如 HTTP_PROXY
+
+database:
+  host: localhost
+  port: 5432
+  name: ra_db
+  user: ra_user
+  password_env: DB_PASSWORD      # 指明对应的 .env 键名（真实密码不写在此文件）
+
+handlers:
+  default_timeout: 5
+  aes:
+    enabled: true
+    key_env: AES_KEY            # 从 .env 读取
+    iv_env: AES_IV
+
+report:
+  formats:
+    - json
+    - html
+    - md
+  output_dir: reports
+
+security:
+  secrets_in_env: true
+  secret_keys:
+    - DB_PASSWORD
+    - API_KEY
+    - AES_KEY
+    - AES_IV
+
+ci:
+  run_doctor_on_ci: true
