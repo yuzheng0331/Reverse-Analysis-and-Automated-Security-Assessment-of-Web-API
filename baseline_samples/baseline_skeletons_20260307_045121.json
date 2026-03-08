@@ -1,0 +1,977 @@
+[
+  {
+    "meta": {
+      "id": "aes",
+      "url": "http://encrypt-labs-main/encrypt/aes.php",
+      "method": "POST",
+      "trigger_function": "sendDataAes",
+      "crypto_algorithms": [
+        "AES",
+        "PayloadPacking"
+      ],
+      "source_analysis_file": "static_analysis_20260307_045121.json",
+      "generated_at": "2026-03-07T16:32:01.158928",
+      "execution_flow": [
+        {
+          "step_type": "setkey",
+          "library": "CryptoJS",
+          "algorithm": "AES",
+          "line": 11,
+          "context": "Variable: key (Resolved: \"1234567890123456\")",
+          "runtime_args": {
+            "key": "1234567890123456"
+          }
+        },
+        {
+          "step_type": "setiv",
+          "library": "CryptoJS",
+          "algorithm": "AES",
+          "line": 12,
+          "context": "Variable: iv (Resolved: \"1234567890123456\")",
+          "runtime_args": {
+            "iv": "1234567890123456"
+          }
+        },
+        {
+          "step_type": "encrypt",
+          "library": "CryptoJS",
+          "algorithm": "AES",
+          "line": 13,
+          "context": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "runtime_args": {},
+          "output_variable": "encrypted"
+        },
+        {
+          "step_type": "pack",
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "line": 19,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/x-www-form-urlencoded; charset=utf-8\"\n  },\n  body: params\n})",
+          "runtime_args": {
+            "packing_info": {
+              "type": "template",
+              "template": "encryptedData={{encrypted}}",
+              "insertions": [
+                {
+                  "type": "template_insertion",
+                  "position": 0,
+                  "variable": "encrypted"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "hints": [
+        "Line 19: fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/x-www-form-urlencoded; charset=utf-8\"\n  },\n  body: params\n})",
+        "Line 10: Inferred Payload Keys for 'jsonData': [\"username\",\"password\"]",
+        "Line 11: Variable: key (Resolved: \"1234567890123456\")",
+        "Line 12: Variable: iv (Resolved: \"1234567890123456\")",
+        "Line 13: CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+      ]
+    },
+    "status": "PENDING_PAYLOAD",
+    "request": {
+      "payload": {
+        "username": "admin",
+        "password": "123456"
+      },
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Verified/1.0"
+      }
+    },
+    "validation": {
+      "verified": true,
+      "last_run": "success",
+      "captured_ciphertext": "nArXfVdnoe67UzojAPP2X+6qSiznLMBAI3a5Bi+zlNzXaUb9+gTXusl67b+DS9Zw",
+      "handler_ciphertext": "nArXfVdnoe67UzojAPP2X+6qSiznLMBAI3a5Bi+zlNzXaUb9+gTXusl67b+DS9Zw",
+      "comparison_result": "MATCH",
+      "runtime_params": {
+        "key": "31323334353637383930313233343536",
+        "iv": "31323334353637383930313233343536",
+        "message": "{\"username\":\"admin\",\"password\":\"123456\"}"
+      },
+      "trace": [
+        {
+          "operation": "encrypt",
+          "message": "{\"username\":\"admin\",\"password\":\"123456\"}",
+          "key": "31323334353637383930313233343536",
+          "iv": "31323334353637383930313233343536",
+          "type": "AES"
+        },
+        {
+          "ciphertext": "nArXfVdnoe67UzojAPP2X+6qSiznLMBAI3a5Bi+zlNzXaUb9+gTXusl67b+DS9Zw",
+          "type": "AES_OUTPUT"
+        },
+        {
+          "url": "http://encrypt-labs-main/encrypt/aes.php",
+          "method": "POST",
+          "body": "encryptedData=nArXfVdnoe67UzojAPP2X%2B6qSiznLMBAI3a5Bi%2BzlNzXaUb9%2BgTXusl67b%2BDS9Zw",
+          "type": "FETCH"
+        }
+      ],
+      "errors": [
+        "步骤 0: 未知的操作 'aes_encrypt'"
+      ]
+    }
+  },
+  {
+    "meta": {
+      "id": "aesserver",
+      "url": "http://encrypt-labs-main/encrypt/aesserver.php",
+      "method": "POST",
+      "trigger_function": "fetchAndSendDataAes",
+      "crypto_algorithms": [
+        "AES",
+        "PayloadPacking"
+      ],
+      "source_analysis_file": "static_analysis_20260307_045121.json",
+      "generated_at": "2026-03-07T16:32:01.160065",
+      "execution_flow": [
+        {
+          "step_type": "encrypt",
+          "library": "CryptoJS",
+          "algorithm": "AES",
+          "line": 137,
+          "context": "CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "runtime_args": {},
+          "output_variable": "encryptedData"
+        },
+        {
+          "step_type": "pack",
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "line": 142,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    encryptedData: encryptedData\n  })\n})",
+          "runtime_args": {
+            "packing_info": {
+              "type": "json",
+              "structure": {
+                "encryptedData": "encryptedData"
+              },
+              "value_derivations": {}
+            }
+          }
+        }
+      ],
+      "hints": [
+        "Line 142: fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    encryptedData: encryptedData\n  })\n})",
+        "Line 136: Inferred Payload Keys for 'jsonData': [\"username\",\"password\"]",
+        "Line 137: CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+      ]
+    },
+    "status": "PENDING_PAYLOAD",
+    "request": {
+      "payload": {
+        "username": "admin",
+        "password": "123456"
+      },
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Verified/1.0"
+      }
+    },
+    "validation": {
+      "verified": true,
+      "last_run": "success",
+      "captured_ciphertext": "FxuyWBB80cDlhJct99JORsC/vyLqI/71PsC9S1eL7hlc/kkn6Qv3S+oB3utQ6NWr",
+      "handler_ciphertext": "FxuyWBB80cDlhJct99JORsC/vyLqI/71PsC9S1eL7hlc/kkn6Qv3S+oB3utQ6NWr",
+      "comparison_result": "MATCH",
+      "runtime_params": {
+        "key": "c979dd05ecdd127c1fdd850320214417",
+        "iv": "d32b1db42cebc38c72ff2dabc15779ea",
+        "message": "{\"username\":\"admin\",\"password\":\"123456\"}"
+      },
+      "trace": [
+        {
+          "url": "encrypt/server_generate_key.php",
+          "method": "GET",
+          "body": null,
+          "type": "FETCH"
+        },
+        {
+          "operation": "encrypt",
+          "message": "{\"username\":\"admin\",\"password\":\"123456\"}",
+          "key": "c979dd05ecdd127c1fdd850320214417",
+          "iv": "d32b1db42cebc38c72ff2dabc15779ea",
+          "type": "AES"
+        },
+        {
+          "ciphertext": "FxuyWBB80cDlhJct99JORsC/vyLqI/71PsC9S1eL7hlc/kkn6Qv3S+oB3utQ6NWr",
+          "type": "AES_OUTPUT"
+        },
+        {
+          "url": "http://encrypt-labs-main/encrypt/aesserver.php",
+          "method": "POST",
+          "body": "{\"encryptedData\":\"FxuyWBB80cDlhJct99JORsC/vyLqI/71PsC9S1eL7hlc/kkn6Qv3S+oB3utQ6NWr\"}",
+          "type": "FETCH"
+        }
+      ],
+      "errors": [
+        "步骤 0: 未知的操作 'aes_encrypt'"
+      ]
+    }
+  },
+  {
+    "meta": {
+      "id": "rsa",
+      "url": "http://encrypt-labs-main/encrypt/rsa.php",
+      "method": "POST",
+      "trigger_function": "sendEncryptedDataRSA",
+      "crypto_algorithms": [
+        "PayloadPacking",
+        "RSA"
+      ],
+      "source_analysis_file": "static_analysis_20260307_045121.json",
+      "generated_at": "2026-03-07T16:32:01.160065",
+      "execution_flow": [
+        {
+          "step_type": "init",
+          "library": "JSEncrypt",
+          "algorithm": "RSA",
+          "line": 53,
+          "context": "new JSEncrypt()",
+          "runtime_args": {}
+        },
+        {
+          "step_type": "setkey",
+          "library": "JSEncrypt",
+          "algorithm": "RSA",
+          "line": 54,
+          "context": "Variable: publicKey (Resolved)",
+          "runtime_args": {
+            "public_key": "\n-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRvA7giwinEkaTYllDYCkzujvi\nNH+up0XAKXQot8RixKGpB7nr8AdidEvuo+wVCxZwDK3hlcRGrrqt0Gxqwc11btlM\nDSj92Mr3xSaJcshZU8kfj325L8DRh9jpruphHBfh955ihvbednGAvOHOrz3Qy3Cb\nocDbsNeCwNpRxwjIdQIDAQAB\n-----END PUBLIC KEY-----\n  "
+          }
+        },
+        {
+          "step_type": "encrypt",
+          "library": "JSEncrypt",
+          "algorithm": "RSA",
+          "line": 55,
+          "context": "encryptor.encrypt(dataString)",
+          "runtime_args": {},
+          "output_variable": "encryptedData"
+        },
+        {
+          "step_type": "pack",
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "line": 62,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/x-www-form-urlencoded\"\n  },\n  body: formData.toString()\n})",
+          "runtime_args": {
+            "packing_info": {
+              "type": "url_search_params",
+              "structure": {
+                "data": "encryptedData"
+              },
+              "value_derivations": {}
+            }
+          }
+        }
+      ],
+      "hints": [
+        "Line 62: fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/x-www-form-urlencoded\"\n  },\n  body: formData.toString()\n})",
+        "Line 52: Inferred Payload Keys: [\"username\",\"password\"]",
+        "Line 53: new JSEncrypt()",
+        "Line 54: Variable: publicKey (Resolved)",
+        "Line 55: encryptor.encrypt(dataString)"
+      ]
+    },
+    "status": "PENDING_PAYLOAD",
+    "request": {
+      "payload": {
+        "username": "admin",
+        "password": "123456"
+      },
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Verified/1.0"
+      }
+    },
+    "validation": {
+      "verified": true,
+      "last_run": "success",
+      "captured_ciphertext": "SqmtyUTmjHyWmJcXnfQIx6DjZ8ENbCrFLrObzjM6tCJTQ8feg2SF+c2ZNN6ZfbaIcItOSZXkKAV3Cfb73o6CquMlgBbZ0sF6YWKwkTbukZt4ADEq/ZQbbjdnOJH/4lb6rOrOnAE5YVyRjhC1+ChQYmaFhF3JFk27UCXcqk1jxP4=",
+      "handler_ciphertext": "Sk4ZL9T9J6+nT9SjDaKWezvSlYW/E9c1D/rR2wi/bzRdVAfBb8lkNCXCEQRGhCKyKEpjIERe7sI0X4pNZ73jTF8EAEbbGvDbV9znUZsRzKBgbM6vaLw912wOAuEHeB8Oa/W//GlqeeiSyXsnNRLM05Yow1F88XcbsX+wa9Qa86M=",
+      "comparison_result": "RSA_RANDOM_PADDING_TODO",
+      "runtime_params": {
+        "message": "{\"username\":\"admin\",\"password\":\"123456\"}"
+      },
+      "trace": [
+        {
+          "operation": "encrypt",
+          "message": "{\"username\":\"admin\",\"password\":\"123456\"}",
+          "type": "RSA"
+        },
+        {
+          "ciphertext": "SqmtyUTmjHyWmJcXnfQIx6DjZ8ENbCrFLrObzjM6tCJTQ8feg2SF+c2ZNN6ZfbaIcItOSZXkKAV3Cfb73o6CquMlgBbZ0sF6YWKwkTbukZt4ADEq/ZQbbjdnOJH/4lb6rOrOnAE5YVyRjhC1+ChQYmaFhF3JFk27UCXcqk1jxP4=",
+          "type": "RSA_OUTPUT"
+        },
+        {
+          "url": "http://encrypt-labs-main/encrypt/rsa.php",
+          "method": "POST",
+          "body": "data=SqmtyUTmjHyWmJcXnfQIx6DjZ8ENbCrFLrObzjM6tCJTQ8feg2SF%2Bc2ZNN6ZfbaIcItOSZXkKAV3Cfb73o6CquMlgBbZ0sF6YWKwkTbukZt4ADEq%2FZQbbjdnOJH%2F4lb6rOrOnAE5YVyRjhC1%2BChQYmaFhF3JFk27UCXcqk1jxP4%3D",
+          "type": "FETCH"
+        }
+      ],
+      "errors": [
+        "步骤 0: 未知的操作 'rsa_encrypt'"
+      ]
+    }
+  },
+  {
+    "meta": {
+      "id": "aesrsa",
+      "url": "http://encrypt-labs-main/encrypt/aesrsa.php",
+      "method": "POST",
+      "trigger_function": "sendDataAesRsa",
+      "crypto_algorithms": [
+        "AES",
+        "PayloadPacking",
+        "RSA"
+      ],
+      "source_analysis_file": "static_analysis_20260307_045121.json",
+      "generated_at": "2026-03-07T16:32:01.160065",
+      "execution_flow": [
+        {
+          "step_type": "encrypt",
+          "library": "CryptoJS",
+          "algorithm": "AES",
+          "line": 86,
+          "context": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "runtime_args": {},
+          "output_variable": "encryptedData"
+        },
+        {
+          "step_type": "init",
+          "library": "JSEncrypt",
+          "algorithm": "RSA",
+          "line": 91,
+          "context": "new JSEncrypt()",
+          "runtime_args": {}
+        },
+        {
+          "step_type": "setkey",
+          "library": "JSEncrypt",
+          "algorithm": "RSA",
+          "line": 92,
+          "context": "TemplateLiteral: \"-----BEGIN PUBLIC KE...\"",
+          "runtime_args": {
+            "public_key": "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRvA7giwinEkaTYllDYCkzujvi\nNH+up0XAKXQot8RixKGpB7nr8AdidEvuo+wVCxZwDK3hlcRGrrqt0Gxqwc11btlM\nDSj92Mr3xSaJcshZU8kfj325L8DRh9jpruphHBfh955ihvbednGAvOHOrz3Qy3Cb\nocDbsNeCwNpRxwjIdQIDAQAB\n-----END PUBLIC KEY-----"
+          }
+        },
+        {
+          "step_type": "encrypt",
+          "library": "JSEncrypt",
+          "algorithm": "RSA",
+          "line": 98,
+          "context": "rsa.encrypt(key.toString(CryptoJS.enc.Base64))",
+          "runtime_args": {},
+          "output_variable": "encryptedKey"
+        },
+        {
+          "step_type": "encrypt",
+          "library": "JSEncrypt",
+          "algorithm": "RSA",
+          "line": 99,
+          "context": "rsa.encrypt(iv.toString(CryptoJS.enc.Base64))",
+          "runtime_args": {},
+          "output_variable": "encryptedIv"
+        },
+        {
+          "step_type": "pack",
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "line": 100,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    encryptedData: encryptedData,\n    encryptedKey: encryptedKey,\n    encryptedIv: encryptedIv\n  })\n})",
+          "runtime_args": {
+            "packing_info": {
+              "type": "json",
+              "structure": {
+                "encryptedData": "encryptedData",
+                "encryptedKey": "encryptedKey",
+                "encryptedIv": "encryptedIv"
+              },
+              "value_derivations": {}
+            }
+          }
+        }
+      ],
+      "hints": [
+        "Line 100: fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    encryptedData: encryptedData,\n    encryptedKey: encryptedKey,\n    encryptedIv: encryptedIv\n  })\n})",
+        "Line 83: Inferred Payload Keys for 'jsonData': [\"username\",\"password\"]",
+        "Line 86: CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+        "Line 91: new JSEncrypt()",
+        "Line 92: TemplateLiteral: \"-----BEGIN PUBLIC KE...\"",
+        "Line 98: rsa.encrypt(key.toString(CryptoJS.enc.Base64))",
+        "Line 99: rsa.encrypt(iv.toString(CryptoJS.enc.Base64))"
+      ]
+    },
+    "status": "PENDING_PAYLOAD",
+    "request": {
+      "payload": {
+        "username": "admin",
+        "password": "123456"
+      },
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Verified/1.0"
+      }
+    },
+    "validation": {
+      "verified": true,
+      "last_run": "failed",
+      "captured_ciphertext": "aRadp5tsoM7TNP8BURBzINjxMsOqvxD9NZiQrS50tztC3PZjq1nYbOx1sUxAL5T5PJRp8tyZfS8yEfSOybZjxnu5ePIf7DpKFUnM2SwklA286flRhzrF+MHNgOjYpWzWfSEpEAawdoQE2p80GjBDtwqhXvYN7GlfYhGnM2dI5xE=",
+      "handler_ciphertext": null,
+      "comparison_result": "RSA_RANDOM_PADDING_TODO",
+      "runtime_params": {
+        "message": "oEo5rZBajCpHLV1jLNTmZA==",
+        "key": "aee9c84b523d41fcc7d27c8ad79e3277",
+        "iv": "a04a39ad905a8c2a472d5d632cd4e664"
+      },
+      "trace": [
+        {
+          "operation": "encrypt",
+          "message": "{\"username\":\"admin\",\"password\":\"123456\"}",
+          "key": "aee9c84b523d41fcc7d27c8ad79e3277",
+          "iv": "a04a39ad905a8c2a472d5d632cd4e664",
+          "type": "AES"
+        },
+        {
+          "ciphertext": "8ahiqA2ItzFJt5qbnYA/KUBQtHzOP129alKF+ZiMe4GH8UJ28AOrKurC6GsAOA0b",
+          "type": "AES_OUTPUT"
+        },
+        {
+          "operation": "encrypt",
+          "message": "runIS1I9QfzH0nyK154ydw==",
+          "type": "RSA"
+        },
+        {
+          "ciphertext": "DU33ahQ4hx+FFHXNZ9JeKGFLgKssXgMPw5XihCm+IQquTF4VBTwnBuixkzpxrfjnyJtiCbi+r/Wej1UsxQgqMhD/wRVsMQHWaPHLtS9kz1qelPdsWwz2NFuQrGwgAzVg46re31DDmsLLwxWUwDYWBvopHVoq6m+gRxpbf6Aw3FU=",
+          "type": "RSA_OUTPUT"
+        },
+        {
+          "operation": "encrypt",
+          "message": "oEo5rZBajCpHLV1jLNTmZA==",
+          "type": "RSA"
+        },
+        {
+          "ciphertext": "aRadp5tsoM7TNP8BURBzINjxMsOqvxD9NZiQrS50tztC3PZjq1nYbOx1sUxAL5T5PJRp8tyZfS8yEfSOybZjxnu5ePIf7DpKFUnM2SwklA286flRhzrF+MHNgOjYpWzWfSEpEAawdoQE2p80GjBDtwqhXvYN7GlfYhGnM2dI5xE=",
+          "type": "RSA_OUTPUT"
+        },
+        {
+          "url": "http://encrypt-labs-main/encrypt/aesrsa.php",
+          "method": "POST",
+          "body": "{\"encryptedData\":\"8ahiqA2ItzFJt5qbnYA/KUBQtHzOP129alKF+ZiMe4GH8UJ28AOrKurC6GsAOA0b\",\"encryptedKey\":\"DU33ahQ4hx+FFHXNZ9JeKGFLgKssXgMPw5XihCm+IQquTF4VBTwnBuixkzpxrfjnyJtiCbi+r/Wej1UsxQgqMhD/wRVsMQHWaPHLtS9kz1qelPdsWwz2NFuQrGwgAzVg46re31DDmsLLwxWUwDYWBvopHVoq6m+gRxpbf6Aw3FU=\",\"encryptedIv\":\"aRadp5tsoM7TNP8BURBzINjxMsOqvxD9NZiQrS50tztC3PZjq1nYbOx1sUxAL5T5PJRp8tyZfS8yEfSOybZjxnu5ePIf7DpKFUnM2SwklA286flRhzrF+MHNgOjYpWzWfSEpEAawdoQE2p80GjBDtwqhXvYN7GlfYhGnM2dI5xE=\"}",
+          "type": "FETCH"
+        }
+      ],
+      "errors": [
+        "步骤 2 (rsa_encrypt) 失败: Plaintext is too long."
+      ]
+    }
+  },
+  {
+    "meta": {
+      "id": "des",
+      "url": "http://encrypt-labs-main/encrypt/des.php",
+      "method": "POST",
+      "trigger_function": "encryptAndSendDataDES",
+      "crypto_algorithms": [
+        "DES",
+        "PayloadPacking"
+      ],
+      "source_analysis_file": "static_analysis_20260307_045121.json",
+      "generated_at": "2026-03-07T16:32:01.160065",
+      "execution_flow": [
+        {
+          "step_type": "derive_key",
+          "library": "CryptoJS",
+          "algorithm": "DES",
+          "line": 163,
+          "context": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "runtime_args": {
+            "derivation": {
+              "type": "op",
+              "input": {
+                "type": "op",
+                "input": {
+                  "type": "op",
+                  "input": {
+                    "type": "source",
+                    "value": "username"
+                  },
+                  "op": "slice",
+                  "args": [
+                    {
+                      "type": "literal",
+                      "value": 0
+                    },
+                    {
+                      "type": "literal",
+                      "value": 8
+                    }
+                  ]
+                },
+                "op": "padEnd",
+                "args": [
+                  {
+                    "type": "literal",
+                    "value": 8
+                  },
+                  {
+                    "type": "literal",
+                    "value": "6"
+                  }
+                ]
+              },
+              "op": "Utf8.parse",
+              "args": []
+            }
+          }
+        },
+        {
+          "step_type": "derive_iv",
+          "library": "CryptoJS",
+          "algorithm": "DES",
+          "line": 164,
+          "context": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "runtime_args": {
+            "derivation": {
+              "type": "op",
+              "input": {
+                "type": "binary_op",
+                "op": "+",
+                "left": {
+                  "type": "literal",
+                  "value": "9999"
+                },
+                "right": {
+                  "type": "op",
+                  "input": {
+                    "type": "op",
+                    "input": {
+                      "type": "source",
+                      "value": "username"
+                    },
+                    "op": "slice",
+                    "args": [
+                      {
+                        "type": "literal",
+                        "value": 0
+                      },
+                      {
+                        "type": "literal",
+                        "value": 4
+                      }
+                    ]
+                  },
+                  "op": "padEnd",
+                  "args": [
+                    {
+                      "type": "literal",
+                      "value": 4
+                    },
+                    {
+                      "type": "literal",
+                      "value": "9"
+                    }
+                  ]
+                }
+              },
+              "op": "Utf8.parse",
+              "args": []
+            }
+          }
+        },
+        {
+          "step_type": "encrypt",
+          "library": "CryptoJS",
+          "algorithm": "DES",
+          "line": 165,
+          "context": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "runtime_args": {},
+          "output_variable": "encryptedPassword"
+        },
+        {
+          "step_type": "pack",
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "line": 171,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: encryptedHex\n  })\n})",
+          "runtime_args": {
+            "packing_info": {
+              "type": "json",
+              "structure": {
+                "username": "username",
+                "password": "encryptedHex"
+              },
+              "value_derivations": {
+                "username": {
+                  "type": "source",
+                  "value": "username"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "hints": [
+        "Line 171: fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: encryptedHex\n  })\n})",
+        "Line 162: Inferred Payload Keys for 'password': [\"password\"]",
+        "Line 163: CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+        "Line 164: CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+        "Line 165: CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+      ]
+    },
+    "status": "PENDING_PAYLOAD",
+    "request": {
+      "payload": {
+        "username": "admin",
+        "password": "123456"
+      },
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Verified/1.0"
+      }
+    },
+    "validation": {
+      "verified": true,
+      "last_run": "success",
+      "captured_ciphertext": "OYH0h8Wv3kM=",
+      "handler_ciphertext": "OYH0h8Wv3kM=",
+      "comparison_result": "MATCH",
+      "runtime_params": {
+        "key": "61646d696e363636",
+        "iv": "3939393961646d69",
+        "message": "123456"
+      },
+      "trace": [
+        {
+          "operation": "encrypt",
+          "message": "123456",
+          "key": "61646d696e363636",
+          "iv": "3939393961646d69",
+          "type": "DES"
+        },
+        {
+          "ciphertext": "OYH0h8Wv3kM=",
+          "type": "DES_OUTPUT"
+        },
+        {
+          "url": "http://encrypt-labs-main/encrypt/des.php",
+          "method": "POST",
+          "body": "{\"username\":\"admin\",\"password\":\"3981f487c5afde43\"}",
+          "type": "FETCH"
+        }
+      ],
+      "errors": [
+        "步骤 0: 未知的操作 'variable_derivation'"
+      ]
+    }
+  },
+  {
+    "meta": {
+      "id": "signdata",
+      "url": "http://encrypt-labs-main/encrypt/signdata.php",
+      "method": "POST",
+      "trigger_function": "sendDataWithNonce",
+      "crypto_algorithms": [
+        "HmacSHA256",
+        "HmacSHA256()",
+        "PayloadPacking"
+      ],
+      "source_analysis_file": "static_analysis_20260307_045121.json",
+      "generated_at": "2026-03-07T16:32:01.160065",
+      "execution_flow": [
+        {
+          "step_type": "hardcoded_secret",
+          "library": "N/A",
+          "algorithm": "N/A",
+          "line": 195,
+          "context": "secretKey = \"be56e...\"",
+          "runtime_args": {}
+        },
+        {
+          "step_type": "setkey",
+          "library": "CryptoJS",
+          "algorithm": "HmacSHA256",
+          "line": 195,
+          "context": "Variable: secretKey (Resolved: \"be56e057f20f883e\")",
+          "runtime_args": {
+            "key": "be56e057f20f883e"
+          }
+        },
+        {
+          "step_type": "sign",
+          "library": "CryptoJS",
+          "algorithm": "HmacSHA256()",
+          "line": 197,
+          "context": "CryptoJS.HmacSHA256(dataToSign, secretKey).toString(CryptoJS.enc.Hex)",
+          "runtime_args": {},
+          "output_variable": "signature"
+        },
+        {
+          "step_type": "sign",
+          "library": "CryptoJS",
+          "algorithm": "HmacSHA256",
+          "line": 197,
+          "context": "CryptoJS.HmacSHA256(dataToSign, secretKey)",
+          "runtime_args": {},
+          "output_variable": "signature"
+        },
+        {
+          "step_type": "pack",
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "line": 198,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    nonce: nonce,\n    timestamp: timestamp,\n    signature: signature\n  })\n})",
+          "runtime_args": {
+            "packing_info": {
+              "type": "json",
+              "structure": {
+                "username": "username",
+                "password": "password",
+                "nonce": "nonce",
+                "timestamp": "timestamp",
+                "signature": "signature"
+              },
+              "value_derivations": {
+                "username": {
+                  "type": "source",
+                  "value": "username"
+                },
+                "password": {
+                  "type": "source",
+                  "value": "password"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "hints": [
+        "Line 198: fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    nonce: nonce,\n    timestamp: timestamp,\n    signature: signature\n  })\n})",
+        "Line 195: secretKey = \"be56e...\"",
+        "Line 197: CryptoJS.HmacSHA256(dataToSign, secretKey).toString(CryptoJS.enc.Hex)",
+        "Line 195: Variable: secretKey (Resolved: \"be56e057f20f883e\")",
+        "Line 196: Inferred Payload Keys for 'dataToSign': [\"username\",\"password\"]",
+        "Line 197: CryptoJS.HmacSHA256(dataToSign, secretKey)"
+      ]
+    },
+    "status": "PENDING_PAYLOAD",
+    "request": {
+      "payload": {
+        "username": "admin",
+        "password": "123456"
+      },
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Verified/1.0"
+      }
+    },
+    "validation": {
+      "verified": true,
+      "last_run": "success",
+      "captured_ciphertext": "a0ca5641f25def495cea469930159f5ba0b988e60e0acf925025eda6505d87a0",
+      "handler_ciphertext": "a0ca5641f25def495cea469930159f5ba0b988e60e0acf925025eda6505d87a0",
+      "comparison_result": "MATCH",
+      "runtime_params": {
+        "key": "be56e057f20f883e",
+        "message": "admin123456s6i98rb27r1772875452"
+      },
+      "trace": [
+        {
+          "operation": "sign",
+          "message": "admin123456s6i98rb27r1772875452",
+          "key": "be56e057f20f883e",
+          "type": "HMAC"
+        },
+        {
+          "ciphertext": "a0ca5641f25def495cea469930159f5ba0b988e60e0acf925025eda6505d87a0",
+          "type": "HMAC_OUTPUT"
+        },
+        {
+          "url": "http://encrypt-labs-main/encrypt/signdata.php",
+          "method": "POST",
+          "body": "{\"username\":\"admin\",\"password\":\"123456\",\"nonce\":\"s6i98rb27r\",\"timestamp\":1772875452,\"signature\":\"a0ca5641f25def495cea469930159f5ba0b988e60e0acf925025eda6505d87a0\"}",
+          "type": "FETCH"
+        }
+      ],
+      "errors": [
+        "步骤 0: 未知的操作 'hmac_sha256'"
+      ]
+    }
+  },
+  {
+    "meta": {
+      "id": "signdataserver",
+      "url": "http://encrypt-labs-main/encrypt/signdataserver.php",
+      "method": "POST",
+      "trigger_function": "sendDataWithNonceServer",
+      "crypto_algorithms": [
+        "PayloadPacking"
+      ],
+      "source_analysis_file": "static_analysis_20260307_045121.json",
+      "generated_at": "2026-03-07T16:32:01.160065",
+      "execution_flow": [
+        {
+          "step_type": "pack",
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "line": 226,
+          "context": "fetch(`${url}/../get-signature.php`, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    timestamp: timestamp\n  })\n})",
+          "runtime_args": {
+            "packing_info": {
+              "type": "json",
+              "structure": {
+                "username": "username",
+                "password": "password",
+                "timestamp": "timestamp"
+              },
+              "value_derivations": {
+                "username": {
+                  "type": "source",
+                  "value": "username"
+                },
+                "password": {
+                  "type": "source",
+                  "value": "password"
+                }
+              }
+            }
+          }
+        },
+        {
+          "step_type": "pack",
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "line": 250,
+          "context": "fetch(`${url}`, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    timestamp: timestamp,\n    signature: signature\n  })\n})",
+          "runtime_args": {
+            "packing_info": {
+              "type": "json",
+              "structure": {
+                "username": "username",
+                "password": "password",
+                "timestamp": "timestamp",
+                "signature": "signature"
+              },
+              "value_derivations": {
+                "username": {
+                  "type": "source",
+                  "value": "username"
+                },
+                "password": {
+                  "type": "source",
+                  "value": "password"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "hints": [
+        "Line 226: fetch(`${url}/../get-signature.php`, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    timestamp: timestamp\n  })\n})",
+        "Line 250: fetch(`${url}`, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    timestamp: timestamp,\n    signature: signature\n  })\n})"
+      ]
+    },
+    "status": "PENDING_PAYLOAD",
+    "request": {
+      "payload": {
+        "username": "admin",
+        "password": "123456"
+      },
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Verified/1.0"
+      }
+    },
+    "validation": {
+      "verified": true,
+      "last_run": "success",
+      "captured_ciphertext": null,
+      "handler_ciphertext": {
+        "username": "admin",
+        "password": "123456"
+      },
+      "comparison_result": "NO_CRYPTO"
+    }
+  },
+  {
+    "meta": {
+      "id": "norepeater",
+      "url": "http://encrypt-labs-main/encrypt/norepeater.php",
+      "method": "POST",
+      "trigger_function": "sendLoginRequest",
+      "crypto_algorithms": [
+        "RSA"
+      ],
+      "source_analysis_file": "static_analysis_20260307_045121.json",
+      "generated_at": "2026-03-07T16:32:01.160065",
+      "execution_flow": [
+        {
+          "step_type": "init",
+          "algorithm": "RSA",
+          "library": "JSEncrypt",
+          "runtime_args": {}
+        },
+        {
+          "step_type": "setkey",
+          "algorithm": "RSA",
+          "library": "JSEncrypt",
+          "runtime_args": {
+            "public_key": "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRvA7giwinEkaTYllDYCkzujvi\nNH+up0XAKXQot8RixKGpB7nr8AdidEvuo+wVCxZwDK3hlcRGrrqt0Gxqwc11btlM\nDSj92Mr3xSaJcshZU8kfj325L8DRh9jpruphHBfh955ihvbednGAvOHOrz3Qy3Cb\nocDbsNeCwNpRxwjIdQIDAQAB\n-----END PUBLIC KEY-----"
+          }
+        },
+        {
+          "step_type": "encrypt",
+          "algorithm": "RSA",
+          "library": "JSEncrypt",
+          "runtime_args": {},
+          "output_variable": "encryptedRandom"
+        }
+      ],
+      "hints": []
+    },
+    "status": "READY",
+    "request": {
+      "payload": {
+        "username": "admin",
+        "password": "123456"
+      },
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Verified/1.0"
+      }
+    },
+    "validation": {
+      "verified": true,
+      "last_run": "success",
+      "captured_ciphertext": "TCyIDahz5N+catNR83q8+7I6QHwmD+K4dheCNY63Fhy5/HuwRxsuAwpISzGhKo8WnUc+n1w4ULH8lSjNTlaeDBfl6WqSFdIxFFweXUQbo1SxeLlNe9InntYPV/WpyRFPOB0YoeHu0HY94LgwHZ3qLKzzDofBv72Uxm2tLwc6sKQ=",
+      "handler_ciphertext": "LXzhRnUpikBArYJWWL1GJYG8ZEFfILdFex0EMtzApWPdKOAVMq4AGywNTx66Rs43faYPv5Q4ZZh+1X+E8GOfv8KejT9nCw7zpAe7OhHO/fMOOefbv6f7ychxoljddOmeV4Zv4lbS8sOLeNyw3U/PXQ3GAovWcKENYReF3n+5Z2Q=",
+      "comparison_result": "RSA_RANDOM_PADDING_TODO",
+      "runtime_params": {
+        "message": "1772875456598"
+      },
+      "trace": [
+        {
+          "operation": "encrypt",
+          "message": "1772875456598",
+          "type": "RSA"
+        },
+        {
+          "ciphertext": "TCyIDahz5N+catNR83q8+7I6QHwmD+K4dheCNY63Fhy5/HuwRxsuAwpISzGhKo8WnUc+n1w4ULH8lSjNTlaeDBfl6WqSFdIxFFweXUQbo1SxeLlNe9InntYPV/WpyRFPOB0YoeHu0HY94LgwHZ3qLKzzDofBv72Uxm2tLwc6sKQ=",
+          "type": "RSA_OUTPUT"
+        },
+        {
+          "url": "http://encrypt-labs-main/encrypt/norepeater.php",
+          "method": "POST",
+          "body": "{\"username\":\"\",\"password\":\"\",\"random\":\"TCyIDahz5N+catNR83q8+7I6QHwmD+K4dheCNY63Fhy5/HuwRxsuAwpISzGhKo8WnUc+n1w4ULH8lSjNTlaeDBfl6WqSFdIxFFweXUQbo1SxeLlNe9InntYPV/WpyRFPOB0YoeHu0HY94LgwHZ3qLKzzDofBv72Uxm2tLwc6sKQ=\"}",
+          "type": "FETCH"
+        }
+      ]
+    }
+  }
+]

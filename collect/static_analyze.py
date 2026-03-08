@@ -21,6 +21,7 @@ Usage:
 
 import json
 import re
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +32,10 @@ import requests
 from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.table import Table
+
+from dotenv import load_dotenv
+load_dotenv() # 从 .env 文件加载环境变量
+import os
 
 console = Console()
 
@@ -59,6 +64,7 @@ class CryptoPattern:
     line: int  # 行号
     context: str  # 上下文代码
     weakness: Optional[str] = None  # 安全弱点
+    details: list[dict] = field(default_factory=list)  # 详细操作映射: [{operation, line, context}]
 
 
 @dataclass
@@ -107,87 +113,24 @@ class StaticAnalyzer:
     整合了原 fetch_js + parse_js + detect_crypto 的功能。
     """
 
-    # 加密模式定义
-    CRYPTO_PATTERNS = {
-        # CryptoJS
-        "cryptojs_aes_encrypt": {
-            "pattern": r"CryptoJS\.AES\.encrypt\s*\(\s*([^,]+),\s*([^,\)]+)",
-            "library": "CryptoJS",
-            "algorithm": "AES",
-            "operation": "encrypt"
-        },
-        "cryptojs_aes_decrypt": {
-            "pattern": r"CryptoJS\.AES\.decrypt\s*\(",
-            "library": "CryptoJS",
-            "algorithm": "AES",
-            "operation": "decrypt"
-        },
-        "cryptojs_md5": {
-            "pattern": r"CryptoJS\.MD5\s*\(",
-            "library": "CryptoJS",
-            "algorithm": "MD5",
-            "operation": "hash"
-        },
-        "cryptojs_sha256": {
-            "pattern": r"CryptoJS\.SHA256\s*\(",
-            "library": "CryptoJS",
-            "algorithm": "SHA256",
-            "operation": "hash"
-        },
-        "cryptojs_hmac": {
-            "pattern": r"CryptoJS\.Hmac(SHA256|SHA1|MD5)\s*\(",
-            "library": "CryptoJS",
-            "algorithm": "HMAC",
-            "operation": "sign"
-        },
+    def __init__(self, output_dir: Optional[Path] = None):
+        # Ensure defaults are created relative to this script's directory (collect/)
+        script_dir = Path(__file__).resolve().parent
 
-        # JSEncrypt (RSA)
-        "jsencrypt_create": {
-            "pattern": r"new\s+JSEncrypt\s*\(",
-            "library": "JSEncrypt",
-            "algorithm": "RSA",
-            "operation": "init"
-        },
-        "jsencrypt_encrypt": {
-            "pattern": r"\.encrypt\s*\([^)]+\)",
-            "library": "JSEncrypt",
-            "algorithm": "RSA",
-            "operation": "encrypt"
-        },
-        "jsencrypt_setkey": {
-            "pattern": r"\.setPublicKey\s*\(\s*['\"`]([^'\"`]+)['\"`]\s*\)",
-            "library": "JSEncrypt",
-            "algorithm": "RSA",
-            "operation": "setkey"
-        },
+        if output_dir is None:
+            self.output_dir = script_dir / "static_analysis"
+        else:
+            # allow callers to override (can be absolute or relative to CWD)
+            self.output_dir = Path(output_dir)
 
-        # DES
-        "cryptojs_des": {
-            "pattern": r"CryptoJS\.(DES|TripleDES)\.encrypt\s*\(",
-            "library": "CryptoJS",
-            "algorithm": "DES",
-            "operation": "encrypt"
-        },
-
-        # 硬编码密钥检测（安全弱点）
-        "hardcoded_key": {
-            "pattern": r"(key|secret|password)\s*[=:]\s*['\"]([a-zA-Z0-9+/=]{8,})['\"]",
-            "library": "N/A",
-            "algorithm": "N/A",
-            "operation": "hardcoded_secret",
-            "weakness": "HARDCODED_KEY"
-        },
-    }
-
-    # 发送函数模式（用于关联端点和加密）
-    SENDER_PATTERNS = [
-        r"function\s+(\w+)\s*\([^)]*\)\s*\{[^}]*(?:fetch|axios|ajax|XMLHttpRequest)[^}]*['\"]([^'\"]+\.php)['\"]",
-        r"(\w+)\s*[=:]\s*(?:async\s+)?function[^{]*\{[^}]*['\"]([^'\"]+\.php)['\"]",
-    ]
-
-    def __init__(self, output_dir: Path = Path("static_analysis")):
-        self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # New directories for collected JS placed under collect/ by default
+        self.raw_js_dir = script_dir / "collected_js" / "raw"
+        self.normalized_js_dir = script_dir / "collected_js" / "normalized"
+        self.raw_js_dir.mkdir(parents=True, exist_ok=True)
+        self.normalized_js_dir.mkdir(parents=True, exist_ok=True)
+
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -288,32 +231,109 @@ class StaticAnalyzer:
         """收集并分析 JS"""
         soup = BeautifulSoup(html, "html.parser")
 
+        # 记录已处理的内容，避免重复
+        processed_contents = set()
+
         for idx, script in enumerate(soup.find_all("script")):
             src = script.get("src")
+            content = ""
+            filename = ""
+            js_url = None
 
             if src:
                 # 外部脚本
                 js_url = urljoin(base_url, src)
                 content = self._download_js(js_url)
-                if content:
-                    self._analyze_js_content(content, src, js_url)
-                    self.result.collected_files.append({
-                        "type": "external",
-                        "url": js_url,
-                        "size": len(content)
-                    })
+                if not content:
+                   continue
+                filename = Path(src).name
+                if not filename.endswith('.js'):
+                    filename = f"script_{idx}.js"
             else:
                 # 内联脚本
                 content = script.string or ""
-                if content.strip():
-                    self._analyze_js_content(content, f"inline_{idx}", None)
-                    self.result.collected_files.append({
-                        "type": "inline",
-                        "index": idx,
-                        "size": len(content)
-                    })
+                if not content.strip():
+                    continue
+                filename = f"inline_{idx}.js"
+
+            # 去重
+            if content in processed_contents:
+                continue
+            processed_contents.add(content)
+
+            # Save raw content
+            raw_path = self.raw_js_dir / filename
+            counter = 1
+            while raw_path.exists():
+                raw_path = self.raw_js_dir / f"{raw_path.stem}_{counter}{raw_path.suffix}"
+                counter += 1
+
+            with open(raw_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+
+            # Deobfuscate/Normalize
+            console.print(f"  [cyan]Normalize:[/cyan] {filename}")
+            normalized_path = self.normalized_js_dir / raw_path.name
+            normalized_content = self._run_deobfuscator(raw_path, normalized_path)
+
+            target_path = normalized_path if normalized_content else raw_path
+            final_content = normalized_content if normalized_content else content
+
+            # Run AST Detection
+            console.print(f"  [cyan]AST Detect:[/cyan] {target_path.name}")
+            # Run AST detector on the normalized (deobfuscated/formatted) file so report line numbers map to normalized
+            ast_findings = self._run_ast_detector(target_path)
+
+            if ast_findings:
+                self._process_ast_findings(ast_findings, final_content, target_path.name)
+
+
+            self.result.collected_files.append({
+                "type": "external" if src else "inline",
+                "url": js_url,
+                "file_path": str(target_path),
+                "size": len(final_content)
+            })
 
         console.print(f"  [green]✓[/green] 分析了 {len(self.result.collected_files)} 个脚本")
+
+    def _run_deobfuscator(self, input_path: Path, output_path: Path) -> Optional[str]:
+        """运行 Node.js 解混淆器"""
+        # Use path relative to this script file to ensure it's found regardless of CWD
+        script_dir = Path(__file__).resolve().parent
+        deobfuscator_script = script_dir / "deobfuscator.js"
+
+        if not deobfuscator_script.exists():
+            console.print(f"  [red]![/red] Deobfuscator script not found at {deobfuscator_script}")
+            return None
+
+        try:
+            cmd = [
+                "node",
+                str(deobfuscator_script),
+                "--input", str(input_path.absolute()),
+                "--output", str(output_path.absolute()),
+                #"--no-formatting"  Optional: remove if you want pretty print
+            ]
+
+            # Use shell=True for Windows if node is in PATH but issues arise,
+            # generally list args are safer/portable. On Windows with shell=False,
+            # ensure 'node' is in path.
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+
+            if result.returncode == 0 and output_path.exists():
+                return output_path.read_text(encoding='utf-8')
+            else:
+                console.print(f"  [yellow]![/yellow] Deobfuscator failed for {input_path.name}: {result.stderr}")
+                return None
+        except Exception as e:
+            console.print(f"  [red]![/red] Deobfuscator error: {e}")
+            return None
 
     def _download_js(self, url: str) -> Optional[str]:
         """下载 JS 文件"""
@@ -324,121 +344,150 @@ class StaticAnalyzer:
         except:
             return None
 
-    def _analyze_js_content(self, content: str, filename: str, url: Optional[str]):
-        """分析 JS 内容"""
-        lines = content.split("\n")
+    def _run_ast_detector(self, input_path: Path) -> Optional[dict]:
+        """运行 AST 检测脚本"""
+        # Use path relative to this script file
+        script_dir = Path(__file__).resolve().parent
+        detector_script = script_dir / "ast_detect_crypto.js"
 
-        # 检测加密模式
-        for pattern_name, pattern_info in self.CRYPTO_PATTERNS.items():
-            for match in re.finditer(pattern_info["pattern"], content, re.IGNORECASE):
-                line_num = content[:match.start()].count("\n") + 1
+        if not detector_script.exists():
+             console.print(f"  [red]![/red] AST Detector script not found at {detector_script}")
+             return None
 
-                # 获取上下文
-                start_line = max(0, line_num - 2)
-                end_line = min(len(lines), line_num + 2)
-                context = "\n".join(lines[start_line:end_line])
+        try:
+            cmd = [
+                "node",
+                str(detector_script),
+                "--input", str(input_path.absolute())
+            ]
 
-                # 找到所在函数
-                func_name = self._find_enclosing_function(content, match.start())
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
-                crypto_pattern = CryptoPattern(
-                    library=pattern_info["library"],
-                    algorithm=pattern_info["algorithm"],
-                    operation=pattern_info["operation"],
-                    function_name=func_name,
-                    file=filename,
-                    line=line_num,
-                    context=context,
-                    weakness=pattern_info.get("weakness")
-                )
-                self.result.crypto_patterns.append(crypto_pattern)
+            if result.returncode == 0:
+                try:
+                    return json.loads(result.stdout)
+                except json.JSONDecodeError:
+                    console.print(f"  [yellow]![/yellow] Failed to parse AST detector output: {result.stdout[:100]}...")
+                    return None
+            else:
+                 console.print(f"  [red]![/red] AST detector error: {result.stderr}")
+                 return None
+        except Exception as e:
+            console.print(f"  [red]![/red] Execution error: {e}")
+            return None
 
-        # 提取函数定义
-        func_patterns = [
-            r"function\s+(\w+)\s*\(",
-            r"(\w+)\s*=\s*function\s*\(",
-            r"(\w+)\s*:\s*function\s*\(",
-            r"const\s+(\w+)\s*=\s*\([^)]*\)\s*=>",
-        ]
+    def _process_ast_findings(self, ast_result: dict, content: str, filename: str):
+        """处理 AST 检测结果并转换为内部结构"""
 
-        for pattern in func_patterns:
-            for match in re.finditer(pattern, content):
-                func_name = match.group(1)
-                line_num = content[:match.start()].count("\n") + 1
+        # 1. Process Findings (Crypto)
+        findings = ast_result.get("findings", [])
+        # Aggregate by (function, library, algorithm) to avoid duplicate crypto types within the same function
+        agg: dict = {}
+        for f in findings:
+            lib = f.get("library", "Unknown")
+            alg = f.get("algorithm", "Unknown")
+            func = f.get("function", "anonymous")
+            op = f.get("operation", "Unknown")
+            line = f.get("line", 0)
+            code = f.get("code", "")
+            weakness = f.get("weakness")
 
-                # 分析函数体
-                func_body = self._extract_function_body(content, match.end())
+            key = (func, lib, alg)
+            if key not in agg:
+                agg[key] = {
+                    "details": [],
+                    "weaknesses": set(),
+                }
 
-                func_info = FunctionInfo(
-                    name=func_name,
-                    file=filename,
-                    line=line_num,
-                    calls_crypto=self._find_crypto_calls(func_body),
-                    calls_api=self._find_api_calls(func_body)
-                )
-                self.result.functions.append(func_info)
+            # Store detail for exact mapping
 
-    def _find_enclosing_function(self, content: str, position: int) -> str:
-        """找到包含指定位置的函数名"""
-        # 简化实现：向前搜索最近的 function 声明
-        before = content[:position]
-        match = re.search(r"function\s+(\w+)\s*\([^)]*\)\s*\{[^}]*$", before)
-        if match:
-            return match.group(1)
+            # 增强：如果 finding 本身携带了更详细的子步骤 (details)，应当优先使用或合并它们
+            # 这些子步骤包含了 resolved_value, inferred_keys 等关键信息
+            if details := f.get("details"):
+                 if isinstance(details, list) and len(details) > 0:
+                    for sub_detail in details:
+                        # Use sub_detail values, fallback to parent finding values if missing
+                        op_sd = sub_detail.get("operation", op)
+                        line_sd = sub_detail.get("line", int(line) if line else 0)
 
-        # 尝试匹配箭头函数
-        match = re.search(r"(\w+)\s*=\s*(?:async\s+)?(?:function|\([^)]*\)\s*=>)[^{]*\{[^}]*$", before)
-        if match:
-            return match.group(1)
+                        detail_entry = {
+                            "operation": op_sd,
+                            "line": line_sd,
+                            "context": sub_detail.get("context", code).strip()
+                        }
 
-        return "anonymous"
+                        # 透传关键扩展字段
+                        # [FIX] Explicitly forward 'derivation', 'target', 'resolved_value', 'inferred_keys'
+                        if "resolved_value" in sub_detail:
+                            detail_entry["resolved_value"] = sub_detail["resolved_value"]
+                        if "inferred_keys" in sub_detail:
+                            detail_entry["inferred_keys"] = sub_detail["inferred_keys"]
+                        if "output_variable" in sub_detail:
+                            detail_entry["output_variable"] = sub_detail["output_variable"]
+                        if "info" in sub_detail:
+                            detail_entry["info"] = sub_detail["info"]
 
-    def _extract_function_body(self, content: str, start: int) -> str:
-        """提取函数体（简化实现）"""
-        # 找到开始的 {
-        brace_start = content.find("{", start)
-        if brace_start == -1:
-            return ""
+                        # Forward derivation logic
+                        if "derivation" in sub_detail:
+                            detail_entry["derivation"] = sub_detail["derivation"]
+                        if "target" in sub_detail:
+                            detail_entry["target"] = sub_detail["target"]
 
-        # 简单计数配对
-        depth = 1
-        pos = brace_start + 1
-        while pos < len(content) and depth > 0:
-            if content[pos] == "{":
-                depth += 1
-            elif content[pos] == "}":
-                depth -= 1
-            pos += 1
+                        agg_key_details = agg[key]["details"]
+                        agg_key_details.append(detail_entry)
+            else:
+                # 回退到旧逻辑：仅记录顶层操作
+                agg[key]["details"].append({
+                    "operation": op,
+                    "line": int(line) if line else 0,
+                    "context": code
+                })
 
-        return content[brace_start:pos]
+            if weakness:
+                agg[key]["weaknesses"].add(weakness)
 
-    def _find_crypto_calls(self, code: str) -> list[str]:
-        """在代码中查找加密调用"""
-        calls = []
-        patterns = [
-            r"CryptoJS\.(AES|DES|MD5|SHA256|HmacSHA256)\.(encrypt|decrypt)",
-            r"\.encrypt\s*\(",
-            r"\.decrypt\s*\(",
-            r"\.sign\s*\(",
-        ]
-        for pattern in patterns:
-            if re.search(pattern, code, re.IGNORECASE):
-                match = re.search(pattern, code, re.IGNORECASE)
-                calls.append(match.group(0))
-        return calls
+        # Convert aggregated entries back to CryptoPattern list
+        for (func, lib, alg), meta in agg.items():
+            # Sort details by line number
+            details = sorted(meta["details"], key=lambda x: x["line"])
 
-    def _find_api_calls(self, code: str) -> list[str]:
-        """在代码中查找 API 调用"""
-        apis = []
-        patterns = [
-            r"fetch\s*\(\s*['\"]([^'\"]+)['\"]",
-            r"axios\.\w+\s*\(\s*['\"]([^'\"]+)['\"]",
-            r"\.ajax\s*\(\s*\{[^}]*url\s*:\s*['\"]([^'\"]+)['\"]",
-        ]
-        for pattern in patterns:
-            for match in re.finditer(pattern, code, re.IGNORECASE):
-                apis.append(match.group(1))
-        return apis
+            # Aggregate operations for high-level summary (deduplicated)
+            ops = sorted(list(set(d["operation"] for d in details if d["operation"])))
+            if not ops: ops = ["Unknown"]
+            op_str = ",".join(ops)
+
+            # Representative line (first occurrence)
+            line_num = details[0]["line"] if details else 0
+
+            # Combined context (truncated)
+            full_context = "\n---\n".join([d["context"] for d in details if d["context"]])
+
+            weakness_val = next(iter(meta["weaknesses"])) if meta["weaknesses"] else None
+
+            crypto_pattern = CryptoPattern(
+                library=lib,
+                algorithm=alg,
+                operation=op_str,
+                function_name=func,
+                file=filename,
+                line=line_num,
+                context=full_context[:300],
+                weakness=weakness_val,
+                details=details
+            )
+            self.result.crypto_patterns.append(crypto_pattern)
+
+        # 2. Process Functions (Structure & API Calls)
+        functions = ast_result.get("functions", [])
+        for func in functions:
+            func_info = FunctionInfo(
+                name=func.get("name", "anonymous"),
+                file=filename,
+                line=func.get("line", 0),
+                calls_crypto=func.get("crypto_calls", []),
+                calls_api=func.get("api_calls", [])
+            )
+            self.result.functions.append(func_info)
 
     def _build_crypto_map(self):
         """建立 端点 → 加密 映射"""
@@ -449,25 +498,64 @@ class StaticAnalyzer:
                 continue
 
             # 找到该函数使用的加密
-            crypto_used = []
+            # 分类收集：Algorithm Patterns 和 Raw Trace Calls
+
+            algo_patterns = []  # 存 {library, algorithm, operation}
+            trace_calls = set() # 存 "CallName"
+
+            # 1. 从 Crypto Patterns 收集（高置信度算法识别）
+            unique_patterns = set()
             for pattern in self.result.crypto_patterns:
                 if pattern.function_name == trigger_func:
-                    crypto_used.append({
-                        "library": pattern.library,
-                        "algorithm": pattern.algorithm,
-                        "operation": pattern.operation
-                    })
+                    key = (pattern.library, pattern.algorithm, pattern.operation)
+                    if key not in unique_patterns:
+                        unique_patterns.add(key)
+                        algo_patterns.append({
+                            "library": pattern.library,
+                            "algorithm": pattern.algorithm,
+                            "operation": pattern.operation,
+                            "details": pattern.details # 传递详细的点对点映射
+                        })
 
-            # 也检查函数信息
+            # 构建 canonical set，用于后续过滤纯 Call 里的重复项
+            # 例如如果我们已经识别了 "CryptoJS.AES.encrypt"，那就不需要在 trace 中再加一次
+            canonical_calls = set()
+            for p in algo_patterns:
+                lib, alg, op = p["library"], p["algorithm"], p["operation"]
+                if lib and lib != "N/A" and alg and alg != "N/A" and op:
+                    canonical_calls.add(f"{lib}.{alg}.{op}")
+
+            # 2. 从 Function Calls 收集（补充调用痕迹）
             for func in self.result.functions:
                 if func.name == trigger_func and func.calls_crypto:
                     for call in func.calls_crypto:
-                        crypto_used.append({"call": call})
+                        # 规范化：去掉可能的前缀
+                        normalized = call
 
-            if crypto_used:
+                        # 过滤掉已经作为 Pattern 识别过的调用（避免冗余）
+                        # 简单的启发式过滤：如果 Trace Call 包含 Algorithm Pattern 里的关键词
+                        is_redundant = False
+                        for canonical in canonical_calls:
+                            # 比如 canonical="CryptoJS.AES.encrypt", normalized="CryptoJS.AES.encrypt"
+                            if normalized in canonical:
+                                is_redundant = True
+                                break
+
+                        if not is_redundant:
+                            trace_calls.add(normalized)
+
+            if algo_patterns or trace_calls:
+                # 提取纯算法列表用于快速索引
+                algorithms = sorted(list(set(
+                    p["algorithm"] for p in algo_patterns
+                    if p["algorithm"] not in ["N/A", "Unknown"]
+                )))
+
                 self.result.endpoint_crypto_map[endpoint.url] = {
                     "trigger_function": trigger_func,
-                    "crypto": crypto_used
+                    "algorithms": algorithms,       # 简表：["AES", "RSA"]
+                    "operations": algo_patterns,    # 详表：[{lib:Crypto, alg:AES...}]
+                    "trace_calls": sorted(list(trace_calls)) # 痕迹：["someFunc.encrypt"]
                 }
 
         console.print(f"  [green]✓[/green] 建立了 {len(self.result.endpoint_crypto_map)} 个端点映射")
@@ -527,7 +615,8 @@ class StaticAnalyzer:
                     "function_name": p.function_name,
                     "file": p.file,
                     "line": p.line,
-                    "weakness": p.weakness
+                    "weakness": p.weakness,
+                    "details": p.details
                 }
                 for p in self.result.crypto_patterns
             ],
@@ -555,10 +644,7 @@ class StaticAnalyzer:
 
             for ep in self.result.endpoints:
                 crypto_info = self.result.endpoint_crypto_map.get(ep.url, {})
-                crypto_str = ", ".join(
-                    c.get("algorithm", c.get("call", "?"))
-                    for c in crypto_info.get("crypto", [])
-                ) or "-"
+                crypto_str = ", ".join(crypto_info.get("algorithms", [])) or "-"
                 table.add_row(ep.url, ep.trigger_function or "-", crypto_str)
 
             console.print(table)
@@ -578,8 +664,9 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="一体化静态分析工具")
-    parser.add_argument("--url", required=True, help="目标 URL")
-    parser.add_argument("--output", type=Path, default=Path("static_analysis"))
+    parser.add_argument("--url", default=os.getenv("TARGET_URL"), help="目标 URL, 默认为靶场URL")
+    # If --output is not provided, StaticAnalyzer will create script-relative directory under collect/
+    parser.add_argument("--output", type=Path, default=None, help="可选：自定义输出目录 (默认放到 collect/static_analysis)")
 
     args = parser.parse_args()
 

@@ -42,47 +42,65 @@ This project provides a skeleton framework for:
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         静态分析阶段（一次完成）                          │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  static_analyze.py ──────────────► static_analysis.json                 │
-│  (合并 fetch + parse + detect)      (完整的静态分析结果)                 │
-│                                                                         │
-│  输出内容：                                                              │
-│  • 加密库识别（CryptoJS, JSEncrypt...）                                  │
-│  • 加密模式检测（AES, RSA, HMAC...）                                     │
-│  • 函数名提取（sendDataAes, encryptData...）                             │
-│  • API 端点发现（/encrypt/aes.php...）                                   │
-│  • 安全弱点标记（硬编码密钥、弱算法...）                                   │
-│  • 端点-函数-加密 三方映射                                                │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         动态采集阶段                                     │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Playwright + Hook ──────────────► baseline_samples/                    │
-│                                                                         │
-│  • 根据静态分析发现的端点，针对性采集                                      │
-│  • Hook 加密函数，捕获明文/密钥/密文                                      │
-│  • 生成真实请求基线                                                      │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         验证与测试阶段                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Handler 验证 ──► 参数变异 ──► 安全评估 ──► 报告生成                      │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    A[Phase 1: Static Analysis] -->|static_analyze.py| B(Static Analysis JSON)
+    B -->|scripts/generate_test_skeletons.py| C[Baseline Skeletons JSON]
+    C -.->|Payload Needs Fill| C
+    
+    C -->|Fill Payload| D[Phase 2: Capture & Verify]
+    D -->|scripts/capture_baseline_playwright.py| E[Browser Capture]
+    E -->|Inject Payload & Hook Crypto| F[Captured Key/IV/Ciphertext]
+    F -->|Update JSON| G(Filled Baseline JSON)
+
+    G -->|scripts/verify_handlers.py| H[Local Handler Simulation]
+    H -->|Execute Pipeline| I[Handler Ciphertext]
+    I -->|Compare against Captured| J{Matching?}
+    J -->|Yes/Verified| K[Phase 3: Security Assessment]
+    J -->|No| L[Debug Handler Impl]
+
+    K -->|assess/assess_endpoint.py| M[Fuzzing & Vulnerability Scan]
 ```
 
+│                                                                         │
+│  输出：加密库识别、算法检测、AST 操作链步骤 (Pipeline Steps)               │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Phase 2-3: 基线骨架生成与完善                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  generate_test_skeletons.py ────► baseline_skeletons_*.json             │
+│                                      (状态: PENDING_PAYLOAD)            │
+│  verify_handlers.py -i ─────────► 填入 Request Payload                  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Phase 4: 动态捕获与 Handler 验证                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  [Playwright Hook] (Future) ────► 捕获 captured_ciphertext              │
+│          │                              │                               │
+│          ▼                              ▼                               │
+│  BaselinePipelineRunner ───────► 本地 Handler 执行 & 比对                │
+│  (scripts/verify_handlers.py)  (handler_ciphertext vs captured)         │
+│                                                                         │
+│  输出：verify: true/false                                                │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Phase 5+: 安全评估与报告                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  参数变异 ──► 重放攻击 ──► 漏洞扫描 ──► 报告生成                           │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ## 🚀 Installation
 
 ### Prerequisites
@@ -141,22 +159,29 @@ chmod +x scripts/setup_env.sh
 
 ## ⚡ Quick Start
 
-### 阶段 1: 静态分析（一步完成）
+### Phase 1: 静态分析 & 骨架生成
 ```bash
-# 分析目标页面，获取完整的静态分析结果
-python collect/static_analyze.py --url http://encrypt-labs-main/easy.php
+# 分析目标页面，生成静态分析结果
+python collect/static_analyze.py --url http://encrypt-labs-main/
+# 基于分析结果生成统一的基线骨架 (json)
+python scripts/generate_test_skeletons.py
 ```
 
-### 阶段 2: 动态采集（基于静态分析结果）
-```bash
-# 使用 Playwright 捕获真实加密请求
-python scripts/capture_baseline.py --url http://encrypt-labs-main/easy.php
-```
+### Phase 2: 填充与验证 (Interactive)
+1. 编辑 `baseline_samples/baseline_skeletons_*.json`，填入 `request.payload`。
+2. 捕获真实数据：
+   ```bash
+   python scripts/capture_baseline_playwright.py
+   ```
+3. 验证本地 Handler：
+   ```bash
+   python scripts/verify_handlers.py
+   ```
 
-### 阶段 3: 验证与测试
+### Phase 3: 安全评估 (Assessment)
 ```bash
-# 生成安全报告
-python assess/report_gen.py --format all
+# 基于已验证的基线进行变异测试
+python assess/assess_endpoint.py
 ```
 
 ## 📂 Pipeline Phases
@@ -170,146 +195,84 @@ Sets up the development environment including:
 - Playwright browser setup
 - Database connectivity check (optional)
 
-### Phase 1: 静态分析（Static Analysis）
-**Script:** `collect/static_analyze.py`
+### Phase 1: 静态分析与骨架 (Static Analysis & Skeleton)
+**Script:** `collect/static_analyze.py`, `scripts/generate_test_skeletons.py`
 
-一体化静态分析工具，整合了原来的 fetch、parse、detect 功能：
-- 收集 HTML 和 JavaScript 文件
-- 提取 API 端点（从 onclick、form action、JS 代码）
-- 检测加密库和算法（CryptoJS、JSEncrypt、WebCrypto 等）
-- 提取函数定义和调用关系
-- 建立端点 ↔ 函数 ↔ 加密算法的三方映射
-- 标记安全弱点（硬编码密钥、弱算法等）
+一体化静态分析工具 + 基线骨架生成：
+- **static_analyze.py**: 收集 HTML/JS，检测加密库和算法，建立端点映射。
+- **generate_test_skeletons.py**: 将分析结果转换为标准化的 JSON 骨架 (`baseline_skeletons_*.json`)，包含操作步骤 (Pipeline Steps) 和 Hints。
 
 ```bash
-# 一步完成所有静态分析
-python collect/static_analyze.py --url http://encrypt-labs-main/easy.php
+python collect/static_analyze.py --url http://target/
+python scripts/generate_test_skeletons.py
 ```
 
-输出：`static_analysis/static_analysis_YYYYMMDD_HHMMSS.json`，包含完整的静态分析结果。
+输出：`baseline_samples/baseline_skeletons_YYYYMMDD_HHMMSS.json` (Status: `PENDING_PAYLOAD`)。
 
-### Phase 2: 动态采集（Dynamic Capture）
-**Scripts:** `scripts/capture_baseline.py`
+### Phase 2: 动态捕获与验证 (Capture & Verify)
+**Scripts:** `scripts/capture_baseline_playwright.py`, `scripts/verify_handlers.py`
 
-基于静态分析结果，使用 Playwright 进行动态采集：
-- 根据发现的端点进行针对性采集
-- Hook 加密函数，捕获明文/密钥/密文
-- 生成真实请求基线样本
+构建并验证本地加密 Handler：
+1. **Fill Payload**: 在 JSON 骨架中填入有效的测试数据（如用户名/密码）。
+2. **Capture**: 运行 `scripts/capture_baseline_playwright.py`。
+   - 使用 Playwright 注入 Payload。
+   - Hook 浏览器加密函数，捕获运行时的 Key, IV, Nonce 和最终密文。
+   - 回填到 JSON 文件。
+3. **Verify**: 运行 `scripts/verify_handlers.py`。
+   - 读取 JSON 中的 Payload 和 Captured Key/IV。
+   - 在本地 Python 环境执行加密流水线。
+   - 比对本地生成的密文与 Playwright 捕获的密文。
 
-```bash
-python scripts/capture_baseline.py --url http://encrypt-labs-main/easy.php
-```
+**目标**：确保本地 Handler 逻辑与浏览器端完全一致 (Ciphertext Match)，为后续 Fuzzing 打下基础。
 
-输出：`baseline_samples/` 目录下的 JSON 文件，包含真实的加密请求。
-
-### Phase 3: Handler 验证
-**Script:** `handlers/` 目录下的加密 Handler
-
-基于静态分析和动态采集的结果，实现本地加密 Handler 并验证：
-- 复现 JS 中的加密逻辑
-- 对比本地输出与真实请求中的密文
-- 验证加密参数的正确性
-
-### Phase 4: Request Replay
-**Script:** `replay/replay_request.py`
-
-Replays requests with transformations, consuming baseline entries:
-- Timestamp updates
-- Signature regeneration
-- Response comparison
-
-```bash
-python replay/replay_request.py --baseline baseline_samples/sample_request.json
-```
-
-### Phase 5: Parameter Mutation
-**Script:** `replay/mutate_params.py`
-
-Generates parameter mutations for testing:
-- Boundary values
-- Type confusion
-- Injection payloads
-- Crypto-specific mutations
-
-```bash
-python replay/mutate_params.py --params '{"username":"test","password":"123"}'
-```
-
-### Phase 7: Security Assessment
+### Phase 3+: 安全评估 (Security Assessment)
 **Script:** `assess/assess_endpoint.py`
 
-Assesses endpoint security:
-- Vulnerability classification
-- Security scoring
-- Risk level determination
-
-```bash
-python assess/assess_endpoint.py --detection crypto_analysis/
-```
-
-### Phase 8: Report Generation
-**Script:** `assess/report_gen.py`
-
-Generates security reports:
-- HTML with visual styling
-- Markdown for documentation
-- JSON for automation
-
-```bash
-python assess/report_gen.py --format all --output reports/
-```
+基于已验证的 Handler (Verified Skeletons) 进行安全性测试：
+- 重放请求 (Replay)
+- 参数变异 (Mutation)
+- 漏洞扫描 (Assessment)
+- 报告生成 (Report)
+**(Note: Phase 4+ 尚未完全重构以适配新的基线骨架格式，敬请期待)**
 
 ## 📁 Directory Structure
 
 ```
 .
-├── scripts/                  # Setup and utility scripts
-│   ├── setup_env.ps1         # PowerShell setup script
-│   ├── setup_env.sh          # Bash setup script
-│   └── capture_baseline.py   # Baseline capture tool (Playwright)
+├── baseline_samples/         # 统一存储基线骨架 (json)
+│   └── baseline_skeletons_*.json
+│
+├── scripts/                  # 核心工具脚本
+│   ├── setup_env.ps1         # 环境初始化
+│   ├── generate_test_skeletons.py # 骨架生成工具
+│   └── verify_handlers.py    # Handler 验证工具
 │
 ├── collect/                  # 静态分析模块
-│   ├── __init__.py
-│   └── static_analyze.py     # 一体化静态分析工具（合并 fetch + parse + detect）
+│   └── static_analyze.py     # 一体化静态分析
 │
-├── analysis/                 # 加密分析模块（保留用于高级分析）
-│   ├── __init__.py
-│   ├── detect_crypto.py      # Crypto detection engine（可选验证）
-│   └── signature_db.py       # Crypto signature database
+├── handlers/                 # 加密 Handler 框架
+│   ├── pipeline.py           # 核心流水线 (BaselinePipelineRunner)
+│   ├── operations.py         # 加密算法实现
+│   └── registry.py           # 算法注册表
 │
-├── handlers/                 # 加密 Handler 实现
-│   └── (crypto handlers here)
+├── replay/                   # (Pending Refactor) 请求重放
+├── assess/                   # (Pending Refactor) 安全评估
+├── report/                   # (Pending Refactor) 报告生成
 │
-├── replay/                   # Request replay module
-│   ├── __init__.py
-│   ├── replay_request.py     # Request replayer
-│   └── mutate_params.py      # Parameter mutator
+├── configs/                  # 全局配置
+│   ├── global.yaml
+│   └── phases_config.yaml
 │
-├── assess/                   # Security assessment module
-│   ├── __init__.py
-│   ├── assess_endpoint.py    # Endpoint assessor
-│   └── report_gen.py         # Report generator
-│
-├── configs/                  # Configuration files
-│   ├── global.yaml           # Global configuration
-│   └── phases_config.yaml    # Pipeline configuration
-│
-├── static_analysis/          # 静态分析结果输出
-│   └── static_analysis_*.json
-│
-├── baseline_samples/         # 动态采集的基线样本
-│   └── baseline_*.json
-│
-├── tests/                    # Test files
+├── tests/                    # 测试文件
 │   └── test_smoke.py
 │
-├── docs/                     # Documentation
-│   └── (documentation here)
+├── docs/                     # 文档
+│   └── HANDLER_COMPLETE.md
 │
-├── .env.example              # Environment template
-├── requirements.txt          # Python dependencies
-├── main.py                   # Main entry point
-└── README.md                 # This file
+├── .env.example              # 环境变量模板
+├── requirements.txt          # Python 依赖
+├── main.py                   # 主入口
+└── README.md                 # 本文件
 ```
 
 ## ⚙️ Configuration
@@ -338,20 +301,20 @@ Configure pipeline phases, dependencies, and options in the YAML file.
 
 ## 🧪 Usage Examples
 
-### Example 1: 完整分析流程
+### Example 1: 完整分析流程 (Modern Workflow)
 
 ```bash
-# 1. 静态分析：一步获取所有加密信息
-python collect/static_analyze.py --url http://encrypt-labs-main/easy.php
+# 1. 静态分析 & 骨架生成
+python collect/static_analyze.py --url http://encrypt-labs-main/
+python scripts/generate_test_skeletons.py
+# -> 生成 baseline_skeletons_*.json
 
-# 2. 动态采集：基于静态分析结果捕获真实请求
-python scripts/capture_baseline.py --url http://encrypt-labs-main/easy.php
+# 2. 交互式填充 Payload 并验证 Handler
+python scripts/verify_handlers.py --interactive
+# -> 提示输入 Payload -> 自动本地运行 -> (如有基线) 自动比对
 
-# 3. 实现并验证 Handler（手动编写，基于静态分析结果）
-# 创建 handlers/cryptojs_aes_handler.py
-
-# 4. 生成报告
-python assess/report_gen.py --format html
+# 3. (后续) 安全评估
+# python assess/assess_endpoint.py ...
 ```
 
 ### Example 2: 仅静态分析
