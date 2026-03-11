@@ -80,6 +80,10 @@ assessment_results/
 reports/
 output/
 logs/
+collect/collected_js/
+collect/static_analysis/
+report/
+baseline_samples/
 
 # -----------------------------------------------------------------------------
 # Sensitive Files
