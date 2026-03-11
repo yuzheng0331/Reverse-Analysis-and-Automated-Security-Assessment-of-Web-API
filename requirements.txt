@@ -5,5 +5,6 @@ playwright
 rich
 pyyaml
 pytest
+matplotlib
 # 可选依赖
 jsbeautifier

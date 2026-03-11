@@ -32,6 +32,7 @@ import requests
 from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.table import Table
+from rich import box
 
 from dotenv import load_dotenv
 load_dotenv() # 从 .env 文件加载环境变量
@@ -148,7 +149,7 @@ class StaticAnalyzer:
         Returns:
             StaticAnalysisResult: 完整的分析结果
         """
-        console.print(f"[bold cyan]═══ 静态分析: {target_url} ═══[/bold cyan]\n")
+        console.print(f"[bold cyan]=== 静态分析: {target_url} ===[/bold cyan]\n")
 
         self.result = StaticAnalysisResult(
             target_url=target_url,
@@ -184,10 +185,10 @@ class StaticAnalyzer:
         try:
             response = self.session.get(url, timeout=30)
             response.raise_for_status()
-            console.print(f"  [green]✓[/green] 获取成功: {len(response.content)} bytes")
+            console.print(f"  [green][OK][/green] 获取成功: {len(response.content)} bytes")
             return response.text
         except Exception as e:
-            console.print(f"  [red]✗[/red] 获取失败: {e}")
+            console.print(f"  [red][ERROR][/red] 获取失败: {e}")
             return None
 
     def _extract_endpoints(self, html: str, base_url: str):
@@ -218,7 +219,7 @@ class StaticAnalyzer:
                     source="form_action"
                 ))
 
-        console.print(f"  [green]✓[/green] 发现 {len(self.result.endpoints)} 个端点")
+        console.print(f"  [green][OK][/green] 发现 {len(self.result.endpoints)} 个端点")
 
     def _is_api_endpoint(self, url: str) -> bool:
         """判断是否为 API 端点"""
@@ -295,7 +296,7 @@ class StaticAnalyzer:
                 "size": len(final_content)
             })
 
-        console.print(f"  [green]✓[/green] 分析了 {len(self.result.collected_files)} 个脚本")
+        console.print(f"  [green][OK][/green] 分析了 {len(self.result.collected_files)} 个脚本")
 
     def _run_deobfuscator(self, input_path: Path, output_path: Path) -> Optional[str]:
         """运行 Node.js 解混淆器"""
@@ -417,7 +418,7 @@ class StaticAnalyzer:
                         }
 
                         # 透传关键扩展字段
-                        # [FIX] Explicitly forward 'derivation', 'target', 'resolved_value', 'inferred_keys'
+                        # [FIX] Explicitly forward structured input/output metadata
                         if "resolved_value" in sub_detail:
                             detail_entry["resolved_value"] = sub_detail["resolved_value"]
                         if "inferred_keys" in sub_detail:
@@ -426,7 +427,15 @@ class StaticAnalyzer:
                             detail_entry["output_variable"] = sub_detail["output_variable"]
                         if "info" in sub_detail:
                             detail_entry["info"] = sub_detail["info"]
-
+                        if "input_expression" in sub_detail:
+                            detail_entry["input_expression"] = sub_detail["input_expression"]
+                        if "input_derivation" in sub_detail:
+                            detail_entry["input_derivation"] = sub_detail["input_derivation"]
+                        if "input_source_keys" in sub_detail:
+                            detail_entry["input_source_keys"] = sub_detail["input_source_keys"]
+                        if "output_transform" in sub_detail:
+                            detail_entry["output_transform"] = sub_detail["output_transform"]
+ 
                         # Forward derivation logic
                         if "derivation" in sub_detail:
                             detail_entry["derivation"] = sub_detail["derivation"]
@@ -558,7 +567,7 @@ class StaticAnalyzer:
                     "trace_calls": sorted(list(trace_calls)) # 痕迹：["someFunc.encrypt"]
                 }
 
-        console.print(f"  [green]✓[/green] 建立了 {len(self.result.endpoint_crypto_map)} 个端点映射")
+        console.print(f"  [green][OK][/green] 建立了 {len(self.result.endpoint_crypto_map)} 个端点映射")
 
     def _detect_weaknesses(self):
         """检测安全弱点"""
@@ -584,7 +593,7 @@ class StaticAnalyzer:
                     "description": f"使用了弱加密算法 {pattern.algorithm}"
                 })
 
-        console.print(f"  [green]✓[/green] 发现 {len(self.result.security_findings)} 个安全问题")
+        console.print(f"  [green][OK][/green] 发现 {len(self.result.security_findings)} 个安全问题")
 
     def save_results(self) -> Path:
         """保存分析结果"""
@@ -627,7 +636,7 @@ class StaticAnalyzer:
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-        console.print(f"\n[green]✓ 结果已保存到: {output_path}[/green]")
+        console.print(f"\n[green][OK] 结果已保存到: {output_path}[/green]")
         return output_path
 
     def display_summary(self):
@@ -637,7 +646,7 @@ class StaticAnalyzer:
 
         # 端点表
         if self.result.endpoints:
-            table = Table(title="发现的 API 端点")
+            table = Table(title="发现的 API 端点", box=box.ASCII)
             table.add_column("URL", style="cyan")
             table.add_column("触发函数", style="yellow")
             table.add_column("加密类型", style="green")
@@ -653,7 +662,7 @@ class StaticAnalyzer:
         if self.result.security_findings:
             console.print("\n[bold red]安全发现:[/bold red]")
             for finding in self.result.security_findings:
-                console.print(f"  • [{finding['severity']}] {finding['description']}")
+                console.print(f"  - [{finding['severity']}] {finding['description']}")
 
 
 # =============================================================================

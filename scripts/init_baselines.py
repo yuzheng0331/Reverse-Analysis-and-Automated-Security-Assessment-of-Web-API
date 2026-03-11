@@ -42,6 +42,85 @@ def extract_source_values(node, keys_set):
             for arg in node["args"]:
                 extract_source_values(arg, keys_set)
 
+
+def normalize_packing_info(packing_info):
+    """
+    归一化静态分析中的打包信息：
+    1. 保留 structure / field_sources / value_derivations
+    2. 将 field_sources 中的 derivation 同步映射到 value_derivations[source_name]
+    """
+    if not isinstance(packing_info, dict):
+        return packing_info
+
+    normalized = dict(packing_info)
+    structure = normalized.get("structure", {}) or {}
+    field_sources = normalized.get("field_sources", {}) or {}
+    value_derivations = dict(normalized.get("value_derivations", {}) or {})
+
+    for field_name, source_info in field_sources.items():
+        if not isinstance(source_info, dict):
+            continue
+        source_name = source_info.get("source_name")
+        derivation = source_info.get("derivation")
+        if derivation and isinstance(source_name, str) and source_name not in value_derivations:
+            value_derivations[source_name] = derivation
+
+    if not field_sources and isinstance(structure, dict):
+        generated_sources = {}
+        for field_name, source_name in structure.items():
+            generated_sources[field_name] = {
+                "source_name": source_name,
+                "source_expression": str(source_name),
+                "source_type": "legacy"
+            }
+        field_sources = generated_sources
+
+    normalized["field_sources"] = field_sources
+    normalized["value_derivations"] = value_derivations
+    return normalized
+
+
+def build_runtime_args_from_detail(detail, algorithm, op_type):
+    """
+    从单个 detail 中提取运行时参数槽位。
+    """
+    runtime_args = {}
+    resolved_val = detail.get("resolved_value")
+
+    if op_type == "setkey":
+        if resolved_val:
+            if algorithm == "RSA":
+                runtime_args["public_key"] = resolved_val
+            else:
+                runtime_args["key"] = resolved_val
+
+    elif op_type == "setiv" and resolved_val:
+        runtime_args["iv"] = resolved_val
+
+    elif op_type == "pack" and "info" in detail:
+        runtime_args["packing_info"] = normalize_packing_info(detail["info"])
+
+    elif op_type.startswith("derive_") and "derivation" in detail:
+        runtime_args["derivation"] = detail["derivation"]
+
+    return runtime_args
+
+
+def forward_detail_fields_to_step(step, detail):
+    """
+    将静态分析 detail 中对后续阶段有用的结构化字段透传到 execution_flow step。
+    """
+    for field_name in [
+        "output_variable",
+        "input_expression",
+        "input_derivation",
+        "input_source_keys",
+        "output_transform",
+        "target"
+    ]:
+        if field_name in detail:
+            step[field_name] = detail[field_name]
+
 def generate_skeletons():
     """
     基于最新的静态分析结果生成统一的基线骨架文件。
@@ -104,18 +183,21 @@ def generate_skeletons():
         # 1. First pass: Collect all potential keys from derivations in all steps
         for op_group in raw_operations:
              for detail in op_group.get("details", []):
-                 # From derivation
-                 if "derivation" in detail:
-                     extract_source_values(detail["derivation"], inferred_payload_keys)
-                 # From DataStructure inferred_keys
-                 if detail.get("operation") == "DataStructure" and "inferred_keys" in detail:
-                     inferred_payload_keys.update(detail["inferred_keys"])
-                 # From Packing Info (NEW)
-                 if detail.get("operation") == "pack" and "info" in detail:
-                     packing_info = detail["info"]
-                     if "value_derivations" in packing_info:
-                         for key, derivation in packing_info["value_derivations"].items():
-                             extract_source_values(derivation, inferred_payload_keys)
+                  # From derivation
+                  if "derivation" in detail:
+                      extract_source_values(detail["derivation"], inferred_payload_keys)
+                  # From structured input derivation (NEW)
+                  if "input_derivation" in detail:
+                      extract_source_values(detail["input_derivation"], inferred_payload_keys)
+                  # From DataStructure inferred_keys
+                  if detail.get("operation") == "DataStructure" and "inferred_keys" in detail:
+                      inferred_payload_keys.update(detail["inferred_keys"])
+                  # From Packing Info (NEW)
+                  if detail.get("operation") == "pack" and "info" in detail:
+                      packing_info = normalize_packing_info(detail["info"])
+                      if "value_derivations" in packing_info:
+                          for derivation in packing_info["value_derivations"].values():
+                              extract_source_values(derivation, inferred_payload_keys)
 
         for op_group in raw_operations:
             # 这是一个算法组（如 JSEncrypt RSA 操作组）
@@ -132,29 +214,7 @@ def generate_skeletons():
                     continue
 
                 # 提取 resolved_value 作为 runtime_args
-                runtime_args = {}
-                resolved_val = detail.get("resolved_value")
-
-                if op_type == "setkey":
-                    if resolved_val:
-                        # 将硬编码的 key 填入 runtime_args
-                        if algorithm == "RSA":
-                            runtime_args["public_key"] = resolved_val
-                        else:
-                            runtime_args["key"] = resolved_val
-                    else:
-                        pass
-
-                elif op_type == "setiv" and resolved_val:
-                    runtime_args["iv"] = resolved_val
-
-                # NEW: Capture Packing Info
-                elif op_type == "pack" and "info" in detail:
-                    runtime_args["packing_info"] = detail["info"]
-
-                # NEW: Capture Derivation Logic
-                elif op_type.startswith("derive_") and "derivation" in detail:
-                    runtime_args["derivation"] = detail["derivation"]
+                runtime_args = build_runtime_args_from_detail(detail, algorithm, op_type)
 
                 step = {
                     "step_type": op_type, # e.g., "init", "setkey", "encrypt"
@@ -166,9 +226,7 @@ def generate_skeletons():
                     "runtime_args": runtime_args
                 }
 
-                # Forward output variable if available
-                if "output_variable" in detail:
-                    step["output_variable"] = detail["output_variable"]
+                forward_detail_fields_to_step(step, detail)
 
                 execution_flow.append(step)
 
@@ -193,7 +251,7 @@ def generate_skeletons():
         initial_payload = {}
         if inferred_payload_keys:
             print(f"[Info] [{endpoint_id}] Inferred payload keys: {inferred_payload_keys}")
-            for k in inferred_payload_keys:
+            for k in sorted(inferred_payload_keys):
                 initial_payload[k] = "<Fill Value>"
         else:
              initial_payload = {"_comment": "Fill your payload here"}

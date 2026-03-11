@@ -107,7 +107,13 @@ function Test-DatabaseConnection {
 # -----------------------------------------------------------------------------
 function Install-PlaywrightBrowsers {
     Write-Host "`n[5/5] Setting up Playwright browsers..." -ForegroundColor Yellow
-
+    try {
+        & $CONFIG.PythonPath -m playwright install chromium
+        Write-Host "  ✓ Playwright Chromium 安装完成" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "  ⚠ Playwright 浏览器安装失败，请手动执行: python -m playwright install chromium" -ForegroundColor Yellow
+    }
 }
 
 # -----------------------------------------------------------------------------
@@ -126,8 +132,8 @@ function Main {
     if ($success) {
         Write-Host "  Environment setup complete!" -ForegroundColor Green
         Write-Host "  Next steps:" -ForegroundColor White
-        Write-Host "  1. Copy .env.example to .env and configure" -ForegroundColor White
-        Write-Host "  2. Run: python scripts/capture_baseline.py" -ForegroundColor White
+        Write-Host "  1. 根据需要检查 .env 中的 TARGET_URL" -ForegroundColor White
+        Write-Host "  2. 运行: python phases/run_full_pipeline.py --url http://encrypt-labs-main/easy.php --username admin --password 123456" -ForegroundColor White
     }
     else {
         Write-Host "  Setup completed with warnings" -ForegroundColor Yellow

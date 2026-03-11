@@ -4,7 +4,7 @@ Verify Handlers against Baseline Skeletons (CLI)
 ================================================
 验证 Handler 逻辑正确性的 CLI 工具。
 使用说明:
-    python verify_handlers.py [skeleton_file.json] [-i/--interactive]
+    python scripts/verify_handlers.py [skeleton_file.json] [-i/--interactive]
 """
 
 import sys
@@ -16,6 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 # 导入新的 BaselinePipelineRunner
+BaselinePipelineRunner = None
 try:
     from handlers.pipeline import BaselinePipelineRunner
 except ImportError as e:
@@ -43,7 +44,7 @@ def main():
 
     if not skeleton_path or not skeleton_path.exists():
         print("错误: 未找到基线骨架文件。")
-        print("请先通过 'python scripts/generate_test_skeletons.py' 生成，或手动指定路径。")
+        print("请先通过 'python scripts/init_baselines.py' 生成，或手动指定路径。")
         sys.exit(1)
 
     print(f"[*] 使用基线文件: {skeleton_path}")
@@ -58,4 +59,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -1,66 +1,169 @@
-基于你提供的文件列表和 `__init__.py` 内容，结合我们之前确认的架构策略（静态骨架+动态血肉），以下是 `handlers` 模块下各脚本的**职责分工**及**协作流程**：
+# handlers 模块职责与协作流程
 
-### 1. 各脚本职责概览
+结合当前项目实现，`handlers` 模块的定位已经明确为：**读取统一基线 JSON，按原语级步骤在本地重放前端加密流程，并与浏览器真实捕获结果做比对验证**。
 
-*   **`base.py` (基石/协议定义)**
-    *   **职责**：定义所有 Handler 必须遵守的“法律”。
-    *   **核心类**：
-        *   `CryptographicOperation`：所有加密操作的父类。规定了必须实现 `execute(data, context)` 方法。
-        *   `EncryptionContext`：**数据载体**。它就像一个篮子，装着静态分析得到的配置（算法名、模式）和运行时捕获的动态数据（Key, IV）。
-    *   **协作**：被所有其他模块引用，确保数据格式统一。
+最终答辩版对外口径统一为：
+- **项目对外统一入口**：`main.py`
+- **内部阶段编排层**：`phases/`
+- **核心执行层之一**：`handlers/`
 
-*   **`registry.py` (调度中心/工厂)**
-    *   **职责**：管理所有的加密算法实现。
-    *   **核心功能**：提供装饰器（如 `@register_operation("AES")`）将具体实现注册进来，并提供 `get_operation("AES")` 方法供外部调用。
-    *   **协作**：`pipeline.py` 会询问它：“给我一个 AES 的处理器”。
+在当前重组后的架构中：
+- **对外统一入口**：`main.py`
+- **内部推荐入口**：`phases/phase4_verify_handlers.py` 与 `phases/run_full_pipeline.py`
+- **核心实现层**：`handlers/` 目录本身
 
-*   **`operations.py` (具体工种)**
-    *   **职责**：这是真正干活的地方。包含具体的标准算法实现（如 `AESOperation`, `RSAOperation`, `HMACSha256Operation`）。
-    *   **协作**：继承自 `base.py` 的类，并注册到 `registry.py` 中。
-
-*   **`providers.py` (底层工具箱)**
-    *   **职责**：封装具体的 Python 加密库（如 `pycryptodome` 或 `cryptography`）。
-    *   **目的**：将业务逻辑与底层库解耦。如果以后换库，只需改这里。
-    *   **协作**：`operations.py` 调用这里的函数来执行底层的字节运算。
-
-*   **`pipeline.py` (流水线/编排者)**
-    *   **职责**：处理复杂的加密链。
-    *   **新模式**：**不再依赖 YAML 配置文件**。而是通过 `BaselinePipelineRunner` 直接读取 `baseline_skeletons_*.json` 中的 `pipeline_steps` 构建流水线。
-    *   **协作**：它是外部调用的入口。它接收一个基线对象，提取其中的操作步骤和运行时参数 (`runtime_args`)，依次从 `registry.py` 获取 Handler 并执行。
-
-*   **`validator.py` (质检员)**
-    *   **职责**：验证 Handler 算出来的结果是否正确。
-    *   **逻辑**：它拿着 `handler_ciphertext`（你的模拟计算结果）和从浏览器 Hooks 捕获到的 `captured_ciphertext`（真实基线密文）进行比对。
-    *   **关键点**：只要本地模拟的密文与浏览器生成的密文一致，即认为 Handler 逻辑正确。无需依赖服务器的 200 OK 响应，这解决了服务器在重放攻击等场景下可能报错的问题。
-    *   **协作**：通常在 `verify_handlers.py` 中被调用。
+也就是说，`handlers` 不直接承担“项目入口”或“阶段编排”的职责，而是作为 `main.py → phases/` 之后的核心执行引擎。
 
 ---
 
-### 2. 它们是如何配合工作的？（新工作流：基线骨架驱动）
+## 1. 各脚本职责概览
 
-假设我们要复现一个流程：**静态分析发现某端点使用 AES 加密**。
+### `base.py`（基类与上下文定义）
+- **职责**：定义 Handler 体系的基础协议。
+- **核心内容**：
+  - `CryptographicOperation`：所有加密原语操作的统一接口。
+  - `EncryptionContext`：在流水线执行过程中保存明文、中间结果、Key/IV/Nonce、签名输入等上下文数据。
+- **意义**：保证不同操作在执行时使用统一的数据结构。
 
-1.  **基线骨架生成 (Skeleton Generation)**:
-    *   运行 `scripts/generate_test_skeletons.py` (之前为 `init_baselines.py`)。
-    *   **输入源**：`collect/static_analysis/static_analysis_*.json`。
-    *   **自动化推断**: 脚本会自动识别 `Encrypt`, `SetKey` 等操作步骤，从 `details` 字段提取硬编码信息，生成 `baseline_skeletons_*.json`。
-    *   **状态**: 此时基线状态为 `PENDING_PAYLOAD`，`request.payload` 为空。
+### `registry.py`（操作注册表）
+- **职责**：管理所有已实现的操作原语。
+- **核心能力**：根据算法/操作类型返回对应处理器。
+- **协作方式**：`pipeline.py` 在逐步执行时，从这里查找具体操作实现。
 
-2.  **Payload 填充与动态捕获 (Payload & Capture)**:
-    *   **Payload 填充**: 开发者或脚本在 `baseline_skeletons_*.json` 中填入符合业务逻辑的 `request.payload`（例如 `{"username": "admin", "password": "123"}`）。
-    *   **真实数据捕获**: 运行 `scripts/capture_baseline_playwright.py`。
-    *   **Playwright Action**: 脚本启动浏览器，Hook 页面上的加密函数（如 `AES.encrypt`, `RSA.encrypt`），自动注入填好的 Payload 并触发前端加密逻辑。
-    *   **数据回填**: 捕获脚本会将浏览器实际使用的 **Key**, **IV**, **Nonce** 以及生成的 **密文 (Ciphertext)** 回填到 JSON 文件的 `meta.execution_flow` (runtime_args) 和 `validation.captured_ciphertext` 字段。
-    *   **目的**: 获取“标准答案” (Truth)。即使服务器端校验失败，只要浏览器加密过程执行完成，我们就能获得用于验证本地 Handler 的基准数据。
+### `operations.py`（具体原语实现）
+- **职责**：提供真实的加密/签名/编码操作实现。
+- **常见内容**：AES、DES、RSA、HMAC、哈希、编码转换等。
+- **协作方式**：继承 `base.py` 中定义的接口，并注册到 `registry.py`。
 
-3.  **Handler 验证 (Handler Verification)**:
-    *   运行 `scripts/verify_handlers.py`。
-    *   **加载数据**: 读取已填充了 Payload 和 `runtime_args` 的 JSON 文件。
-    *   **模拟执行**: `BaselinePipelineRunner` 使用 JSON 中的 `pipeline_steps` 和捕获到的 Key/IV，在本地 Python 环境中完全复刻加密过程。
-    *   **比对验证**: `ValidationEngine` 比较 `handler_ciphertext` (本地生成) 和 `captured_ciphertext` (浏览器捕获)。
-    *   **判定标准**: **密文一致 (Ciphertext Match) = Pass**。这证明了本地 Python Handler 精确还原了前端 JS 的加密逻辑。
+### `providers.py`（底层能力封装）
+- **职责**：封装底层密码库或通用工具能力。
+- **意义**：将原语执行逻辑与第三方库解耦，便于后续替换实现。
 
-4.  **安全性评估 (Security Assessment)**:
-    *   运行 `assess/assess_endpoint.py`。
-    *   **基于验证**: 既然 Handler 已经验证正确，我们就可以利用它来构造任意攻击载荷（如 SQL 注入 payload）。
-    *   **过程**: 修改 Payload -> 本地 Handler 加密 -> 发送给服务器 -> 检查业务响应。
+### `pipeline.py`（流水线编排核心）
+- **职责**：读取统一基线 JSON 中的 `meta.execution_flow`，逐步执行每个 API 的原语级步骤。
+- **当前模式**：**不再依赖 YAML 配置文件**，也不再直接读取静态分析 JSON。
+- **输入来源**：`baseline_samples/baseline_skeletons_*.json`。
+- **粒度说明**：一个 API 对应一条流水线，流水线内部由多个 step 构成，step 粒度精确到 `init`、`setkey`、`setiv`、`encrypt`、`sign`、`derive_*`、`pack` 等原语动作。
+
+### `validator.py`（结果验证）
+- **职责**：比较本地 Handler 生成结果与浏览器真实捕获结果是否一致。
+- **判定标准**：
+  - 对 **AES / DES / HMAC / 哈希** 等确定性结果，要求 `handler_ciphertext` 与 `captured_ciphertext` **严格一致**。
+  - 对 **RSA / AESRSA** 这类包含随机填充的场景，不要求逐字节密文一致；只要原语步骤、输入、Key/IV/PublicKey、打包字段链路正确，即标记为 `RSA_NONDETERMINISTIC_LOGIC_VALIDATED`。
+  - 对 **signdataserver** 这类由服务端返回 `signature`、前端仅执行请求打包的端点，不属于“本地签名原语复现”；此类记录应归类为 `NO_CRYPTO`，验证通过意味着：最终请求体字段、`timestamp/signature` 等运行时参数回填正确，后续可用于协议篡改评估。
+- **关键说明**：**不要求服务器一定返回 200 OK**。只要浏览器端真实执行了前端加密逻辑并成功产出密文，就可以用于 Handler 验证。
+
+---
+
+## 2. 当前工作流：统一基线 JSON 驱动
+
+对外展示时，这套工作流建议统一描述为：
+
+`main.py`
+→ `phases/run_full_pipeline.py`
+→ 静态分析 / 基线生成 / 动态捕获 / Handler 验证 / 安全评估 / 报告生成
+→ 其中 `handlers/` 负责“本地重放与正确性验证”这一核心环节。
+
+### 阶段 1：静态分析
+- 运行 `collect/static_analyze.py`。
+- 输出：`collect/static_analysis/static_analysis_*.json`。
+- 作用：识别端点、算法、原语步骤、硬编码 Key/IV、派生逻辑、数据结构提示等信息。
+
+### 阶段 2：基线骨架生成
+- 运行 `scripts/init_baselines.py`。
+- 输入：最新的 `collect/static_analysis/static_analysis_*.json`。
+- 输出：`baseline_samples/baseline_skeletons_*.json`。
+- 结果：同一个基线文件中包含本次静态分析识别到的多个 API 记录。
+
+每条 API 基线通常包含：
+- `meta`：端点信息、触发函数、算法列表、`execution_flow` 等。
+- `request`：待发送请求的 Payload、Header。
+- `validation`：浏览器捕获密文、本地模拟密文、验证结果等。
+
+### 阶段 3：Payload 预填
+- 在 `baseline_skeletons_*.json` 中补全每个 API 的 `request.payload`。
+- 这一步发生在 Handler 验证之前。
+- 如果 Payload 缺失或仍为占位值，CLI 应提示补全。
+
+### 阶段 4：浏览器动态捕获
+- 运行 `scripts/capture_baseline_playwright.py`。
+- Playwright 会读取基线中的：
+  - `meta.url`
+  - `meta.trigger_function`
+  - `request.payload`
+- 然后在真实页面环境中执行前端逻辑，捕获：
+  - Key
+  - IV
+  - Nonce
+  - 时间戳
+  - 签名输入
+  - 最终密文
+- 这些数据会回填到：
+  - `meta.execution_flow[*].runtime_args`
+  - `validation.captured_ciphertext`
+
+### 阶段 5：本地 Handler 验证
+- 推荐运行 `phases/phase4_verify_handlers.py`。
+- 底层核心脚本仍为 `scripts/verify_handlers.py`。
+- `BaselinePipelineRunner` 读取同一份基线 JSON。
+- 按 `meta.execution_flow` 中的步骤逐步执行。
+- 得到 `handler_ciphertext` 后，与 `validation.captured_ciphertext` 比对，或按端点类型采用对应验证口径：
+  - 确定性算法：严格比对。
+  - RSA/AESRSA：标记 `RSA_NONDETERMINISTIC_LOGIC_VALIDATED`。
+  - 服务端签名类 PayloadPacking 端点：标记 `NO_CRYPTO`。
+- 只要满足对应口径，即将该记录标记为 `VERIFIED`。
+
+---
+
+## 3. handlers 在整套系统中的意义
+
+`handlers` 的作用不是“替代浏览器”，而是：
+
+1. **把前端 JS 的加密过程变成可重复执行的本地流水线**。
+2. **在不依赖浏览器的情况下，重新构造合法密文请求**。
+3. **为后续安全评估提供稳定、可编排、可批量执行的能力**。
+
+也就是说：
+- 浏览器负责给出一次真实执行结果，用来建立“标准答案”;
+- Handler 负责在本地稳定复现这条加密链;
+- 安全评估阶段再利用已验证的 Handler 去构造多种测试载荷。
+
+---
+
+## 4. 安全评估阶段与 handlers 的关系
+
+当某个 API 已经通过 Handler 验证后，就可以进入安全评估阶段。
+
+典型流程为：
+1. 基于 `VERIFIED` 基线读取原始 Payload。
+2. 生成测试场景（如注入、边界值、字段缺失、旧 Nonce 重放等）。
+3. 调用本地 Handler 重新加密。
+4. 将构造后的请求发送到目标 API。
+5. 根据响应码、响应体、时间差异、错误模式判断是否存在安全问题。
+
+在当前实现中，安全评估结果还会进一步进入**可配置评分模型**：
+- 评分配置文件位置：`configs/scoring_profiles.yaml`
+- 支持通过 CLI 选择 `default`、`crypto_focus`、`paper_v1` 等 profile
+- 评分模型会综合：
+  1. 漏洞严重级别扣分
+  2. 发现类别系数
+  3. 场景执行结果（`LOCAL_FAILED` / `SKIPPED`）的惩罚
+  4. 场景类别系数
+  5. 基线缺口惩罚
+
+也就是说，`handlers` 负责提供**可验证、可重建、可批量运行**的基础能力，而最终报告中的风险分数则由评估层依据 profile 进行解释性汇总。
+
+---
+
+## 5. 当前架构下需要记住的关键点
+
+1. **统一输入源是基线 JSON，不是 YAML，不是静态分析 JSON。**
+2. **最终答辩版对外入口是 `main.py`，`phases/` 是内部阶段编排层。**
+3. **`handlers/` 是核心实现层，不是项目入口，也不是阶段编排层。**
+4. **一个 API 对应一条基线记录，也对应一条本地流水线。**
+5. **流水线步骤保存在 `meta.execution_flow` 中，而不是旧的 `pipeline_steps`。**
+6. **验证标准不是一刀切：确定性算法要求密文一致，RSA/AESRSA 允许“非确定性密文但逻辑验证通过”，服务端签名类端点则验证最终请求打包与运行时参数回填。**
+7. **只有通过验证的基线，才适合进入后续自动化安全评估。**
+8. **安全评估分数不是写死常量，而是由 `configs/scoring_profiles.yaml` 中的 profile 驱动。**
+
+如果后续继续扩展 `handlers`，优先保持这套“基线驱动 + 原语级 step + 动态捕获回填 + 本地验证”的核心模式不变。

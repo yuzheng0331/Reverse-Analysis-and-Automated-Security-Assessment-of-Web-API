@@ -1,429 +1,302 @@
 # 🔒 Reverse Analysis and Automated Security Assessment of Web API
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+一个面向毕业设计场景的 Web API 前端加密逆向与自动化安全评估流水线。
 
-A comprehensive pipeline for reverse engineering front-end crypto implementations and automated security assessment of web APIs.
+当前项目采用**统一基线 JSON** 作为主线数据结构，完整闭环为：
 
-## 📋 Table of Contents
+**静态分析 → 基线骨架生成 → Payload 预填 → Playwright 动态捕获 → Handler 本地验证 → 安全性评估 → 报告与图表生成**
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Pipeline Phases](#pipeline-phases)
-- [Directory Structure](#directory-structure)
-- [Usage Examples](#usage-examples)
-- [Configuration](#configuration)
-- [Development](#development)
-- [Acceptance Criteria Checklist](#acceptance-criteria-checklist)
-- [Contributing](#contributing)
-- [License](#license)
-
-## 🎯 Overview
-
-This project provides a skeleton framework for:
-
-1. **Capturing** baseline API requests from web applications
-2. **Collecting** and analyzing JavaScript files for crypto patterns
-3. **Detecting** cryptographic implementations (AES, RSA, HMAC, etc.)
-4. **Replaying** requests with regenerated crypto parameters
-5. **Mutating** parameters for security testing
-6. **Assessing** endpoint security vulnerabilities
-7. **Generating** comprehensive security reports
-
-### Key Features
-
-- 🔍 Automated JavaScript crypto pattern detection
-- 🔐 Support for common crypto libraries (CryptoJS, JSEncrypt, etc.)
-- 📊 Security scoring and vulnerability classification
-- 📝 Multi-format report generation (HTML, Markdown, JSON)
-- 🛠️ Extensible architecture with plugin support
-
-## 🏗️ Architecture
-
-```mermaid
-graph TD
-    A[Phase 1: Static Analysis] -->|static_analyze.py| B(Static Analysis JSON)
-    B -->|scripts/generate_test_skeletons.py| C[Baseline Skeletons JSON]
-    C -.->|Payload Needs Fill| C
-    
-    C -->|Fill Payload| D[Phase 2: Capture & Verify]
-    D -->|scripts/capture_baseline_playwright.py| E[Browser Capture]
-    E -->|Inject Payload & Hook Crypto| F[Captured Key/IV/Ciphertext]
-    F -->|Update JSON| G(Filled Baseline JSON)
-
-    G -->|scripts/verify_handlers.py| H[Local Handler Simulation]
-    H -->|Execute Pipeline| I[Handler Ciphertext]
-    I -->|Compare against Captured| J{Matching?}
-    J -->|Yes/Verified| K[Phase 3: Security Assessment]
-    J -->|No| L[Debug Handler Impl]
-
-    K -->|assess/assess_endpoint.py| M[Fuzzing & Vulnerability Scan]
-```
-
-│                                                                         │
-│  输出：加密库识别、算法检测、AST 操作链步骤 (Pipeline Steps)               │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Phase 2-3: 基线骨架生成与完善                    │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  generate_test_skeletons.py ────► baseline_skeletons_*.json             │
-│                                      (状态: PENDING_PAYLOAD)            │
-│  verify_handlers.py -i ─────────► 填入 Request Payload                  │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Phase 4: 动态捕获与 Handler 验证                 │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  [Playwright Hook] (Future) ────► 捕获 captured_ciphertext              │
-│          │                              │                               │
-│          ▼                              ▼                               │
-│  BaselinePipelineRunner ───────► 本地 Handler 执行 & 比对                │
-│  (scripts/verify_handlers.py)  (handler_ciphertext vs captured)         │
-│                                                                         │
-│  输出：verify: true/false                                                │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Phase 5+: 安全评估与报告                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  参数变异 ──► 重放攻击 ──► 漏洞扫描 ──► 报告生成                           │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-## 🚀 Installation
-
-### Prerequisites
-
-- Python 3.8 or higher
-- pip package manager
-- Git
-
-### Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yuzheng0331/Reverse-Analysis-and-Automated-Security-Assessment-of-Web-API.git
-   cd Reverse-Analysis-and-Automated-Security-Assessment-of-Web-API
-   ```
-
-2. **Create virtual environment**
-   ```bash
-   python -m venv .venv
-   
-   # Windows
-   .venv\Scripts\activate
-   
-   # Linux/macOS
-   source .venv/bin/activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Install Playwright browsers** (for browser-based capture)
-   ```bash
-   python -m playwright install chromium
-   ```
-
-5. **Configure environment**
-   ```bash
-   cp .env .env
-   # Edit .env with your configuration
-   ```
-
-### Automated Setup (Optional)
-
-**Windows (PowerShell):**
-```powershell
-.\scripts\setup_env.ps1
-```
-
-**Linux/macOS:**
-```bash
-chmod +x scripts/setup_env.sh
-./scripts/setup_env.sh
-```
-
-## ⚡ Quick Start
-
-### Phase 1: 静态分析 & 骨架生成
-```bash
-# 分析目标页面，生成静态分析结果
-python collect/static_analyze.py --url http://encrypt-labs-main/
-# 基于分析结果生成统一的基线骨架 (json)
-python scripts/generate_test_skeletons.py
-```
-
-### Phase 2: 填充与验证 (Interactive)
-1. 编辑 `baseline_samples/baseline_skeletons_*.json`，填入 `request.payload`。
-2. 捕获真实数据：
-   ```bash
-   python scripts/capture_baseline_playwright.py
-   ```
-3. 验证本地 Handler：
-   ```bash
-   python scripts/verify_handlers.py
-   ```
-
-### Phase 3: 安全评估 (Assessment)
-```bash
-# 基于已验证的基线进行变异测试
-python assess/assess_endpoint.py
-```
-
-## 📂 Pipeline Phases
-
-### Phase 0: Environment Setup
-**Scripts:** `scripts/setup_env.sh`, `scripts/setup_env.ps1`
-
-Sets up the development environment including:
-- Python virtual environment
-- Dependencies installation
-- Playwright browser setup
-- Database connectivity check (optional)
-
-### Phase 1: 静态分析与骨架 (Static Analysis & Skeleton)
-**Script:** `collect/static_analyze.py`, `scripts/generate_test_skeletons.py`
-
-一体化静态分析工具 + 基线骨架生成：
-- **static_analyze.py**: 收集 HTML/JS，检测加密库和算法，建立端点映射。
-- **generate_test_skeletons.py**: 将分析结果转换为标准化的 JSON 骨架 (`baseline_skeletons_*.json`)，包含操作步骤 (Pipeline Steps) 和 Hints。
-
-```bash
-python collect/static_analyze.py --url http://target/
-python scripts/generate_test_skeletons.py
-```
-
-输出：`baseline_samples/baseline_skeletons_YYYYMMDD_HHMMSS.json` (Status: `PENDING_PAYLOAD`)。
-
-### Phase 2: 动态捕获与验证 (Capture & Verify)
-**Scripts:** `scripts/capture_baseline_playwright.py`, `scripts/verify_handlers.py`
-
-构建并验证本地加密 Handler：
-1. **Fill Payload**: 在 JSON 骨架中填入有效的测试数据（如用户名/密码）。
-2. **Capture**: 运行 `scripts/capture_baseline_playwright.py`。
-   - 使用 Playwright 注入 Payload。
-   - Hook 浏览器加密函数，捕获运行时的 Key, IV, Nonce 和最终密文。
-   - 回填到 JSON 文件。
-3. **Verify**: 运行 `scripts/verify_handlers.py`。
-   - 读取 JSON 中的 Payload 和 Captured Key/IV。
-   - 在本地 Python 环境执行加密流水线。
-   - 比对本地生成的密文与 Playwright 捕获的密文。
-
-**目标**：确保本地 Handler 逻辑与浏览器端完全一致 (Ciphertext Match)，为后续 Fuzzing 打下基础。
-
-### Phase 3+: 安全评估 (Security Assessment)
-**Script:** `assess/assess_endpoint.py`
-
-基于已验证的 Handler (Verified Skeletons) 进行安全性测试：
-- 重放请求 (Replay)
-- 参数变异 (Mutation)
-- 漏洞扫描 (Assessment)
-- 报告生成 (Report)
-**(Note: Phase 4+ 尚未完全重构以适配新的基线骨架格式，敬请期待)**
-
-## 📁 Directory Structure
-
-```
-.
-├── baseline_samples/         # 统一存储基线骨架 (json)
-│   └── baseline_skeletons_*.json
-│
-├── scripts/                  # 核心工具脚本
-│   ├── setup_env.ps1         # 环境初始化
-│   ├── generate_test_skeletons.py # 骨架生成工具
-│   └── verify_handlers.py    # Handler 验证工具
-│
-├── collect/                  # 静态分析模块
-│   └── static_analyze.py     # 一体化静态分析
-│
-├── handlers/                 # 加密 Handler 框架
-│   ├── pipeline.py           # 核心流水线 (BaselinePipelineRunner)
-│   ├── operations.py         # 加密算法实现
-│   └── registry.py           # 算法注册表
-│
-├── replay/                   # (Pending Refactor) 请求重放
-├── assess/                   # (Pending Refactor) 安全评估
-├── report/                   # (Pending Refactor) 报告生成
-│
-├── configs/                  # 全局配置
-│   ├── global.yaml
-│   └── phases_config.yaml
-│
-├── tests/                    # 测试文件
-│   └── test_smoke.py
-│
-├── docs/                     # 文档
-│   └── HANDLER_COMPLETE.md
-│
-├── .env.example              # 环境变量模板
-├── requirements.txt          # Python 依赖
-├── main.py                   # 主入口
-└── README.md                 # 本文件
-```
-
-## ⚙️ Configuration
-
-### Environment Variables (`.env`)
-
-Copy `.env.example` to `.env` and configure:
-
-```bash
-# Target application
-TARGET_URL=https://example.com
-
-# Database (optional)
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=api_assessment
-
-# Playwright settings
-PLAYWRIGHT_BROWSER=chromium
-PLAYWRIGHT_HEADLESS=true
-```
-
-### Pipeline Configuration (`configs/phases_config.yaml`)
-
-Configure pipeline phases, dependencies, and options in the YAML file.
-
-## 🧪 Usage Examples
-
-### Example 1: 完整分析流程 (Modern Workflow)
-
-```bash
-# 1. 静态分析 & 骨架生成
-python collect/static_analyze.py --url http://encrypt-labs-main/
-python scripts/generate_test_skeletons.py
-# -> 生成 baseline_skeletons_*.json
-
-# 2. 交互式填充 Payload 并验证 Handler
-python scripts/verify_handlers.py --interactive
-# -> 提示输入 Payload -> 自动本地运行 -> (如有基线) 自动比对
-
-# 3. (后续) 安全评估
-# python assess/assess_endpoint.py ...
-```
-
-### Example 2: 仅静态分析
-
-```bash
-# 快速分析目标页面的加密实现
-python collect/static_analyze.py --url http://target.com/login.php --output my_analysis/
-```
-
-### Example 3: Test Parameter Mutations
-
-```bash
-# Generate mutations for login parameters
-python replay/mutate_params.py --params '{"username":"test","password":"pass123","sign":"abc"}'
-
-# Apply specific strategies
-python replay/mutate_params.py --params '{"id":123}' --strategy injection crypto
-```
-
-## 👥 Development
-
-### Running Tests
-
-```bash
-pytest tests/
-```
-
-### Code Style
-
-The project follows PEP 8 guidelines. Format code with:
-
-```bash
-black .
-isort .
-```
-
-### Adding New Crypto Signatures
-
-Add signatures to `analysis/signature_db.py` or create a custom `configs/signatures.json`:
-
-```json
-{
-  "signatures": [
-    {
-      "id": "CUSTOM_001",
-      "name": "Custom Crypto Pattern",
-      "category": "symmetric",
-      "patterns": ["customEncrypt\\s*\\("],
-      "weakness_level": "medium",
-      "description": "Custom encryption function"
-    }
-  ]
-}
-```
-
-## ✅ Acceptance Criteria Checklist
-
-After merging this PR, verify the following:
-
-### Environment Setup
-- [ ] Clone the repository successfully
-- [ ] Create virtual environment: `python -m venv .venv`
-- [ ] Install dependencies: `pip install -r requirements.txt`
-- [ ] Copy `.env.example` to `.env`
-- [ ] Run setup script without errors
-
-### Phase 1: 静态分析
-- [ ] `python collect/static_analyze.py --url http://target.com` 运行成功
-- [ ] 生成 `static_analysis/static_analysis_*.json` 文件
-- [ ] JSON 包含：端点列表、加密模式、函数信息、端点-加密映射
-- [ ] 识别出常见加密库（CryptoJS、JSEncrypt 等）
-- [ ] 检测到安全弱点（如硬编码密钥、弱算法）
-
-### Phase 2: 动态采集
-- [ ] `python scripts/capture_baseline.py --url http://target.com` 执行成功
-- [ ] 生成 `baseline_samples/baseline_*.json` 文件
-- [ ] 基线样本包含真实的请求和响应数据
-
-### Phase 3-4: 验证与测试
-- [ ] 基于静态分析结果实现 Handler
-- [ ] Handler 输出与基线样本中的密文一致
-- [ ] `python replay/mutate_params.py --params '{"test":"value"}'` 生成变异
-- [ ] `python assess/report_gen.py --format html` 创建 HTML 报告
-
-### Code Quality
-- [ ] All Python files have docstrings
-- [ ] No hardcoded credentials in code
-- [ ] `.env.example` contains only placeholders
-- [ ] Import statements are properly organized
-
-### Documentation
-- [ ] README.md is complete and accurate
-- [ ] All scripts have `--help` documentation
-- [ ] Configuration files are documented
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/new-feature`
-3. Commit changes: `git commit -m 'Add new feature'`
-4. Push to branch: `git push origin feature/new-feature`
-5. Submit a Pull Request
+最终答辩版对外口径统一为：
+- **项目统一入口**：`main.py`
+- **内部阶段编排层**：`phases/`
+- **核心实现层**：`collect/`、`scripts/`、`handlers/`、`assess/`、`runtime/`
 
 ---
 
-**Note:** This is a skeleton/template project. Many functions contain TODO placeholders that need to be implemented for production use. The framework provides the structure and examples to guide development.
+## 1. 项目目标
+
+本项目主要解决以下问题：
+
+1. 收集并规范化前端 JavaScript，识别页面触发的 API 与加密逻辑。
+2. 通过 AST 静态分析提取原语级步骤，包括 `init`、`setkey`、`setiv`、`encrypt`、`sign`、`derive_*`、`pack` 等。
+3. 基于静态分析结果生成统一基线文件，一个静态分析结果对应一个 `baseline_skeletons_*.json`，其中包含多个 API 基线记录。
+4. 在基线中预填有效 Payload，使后续浏览器捕获与 Handler 验证使用同一输入源。
+5. 通过 Playwright Hook 捕获真实运行时参数与密文，回填 Key / IV / Nonce / 时间戳 / 签名材料等信息。
+6. 用本地 Handler 逐步模拟加密过程并校验正确性。
+7. 在已验证基线上执行多场景安全评估，覆盖重放、参数变异、边界值、协议参数篡改等测试。
+8. 输出结构化报告与图表，供毕业设计展示与论文撰写使用。
+
+---
+
+## 2. 当前推荐架构
+
+当前代码层面采用**两层结构**：
+
+### 2.1 统一阶段入口层
+集中放在 `phases/` 目录，负责：
+- 按阶段编排
+- 统一参数入口
+- 串行执行完整链路
+- 降低脚本散落带来的使用成本
+
+### 2.2 核心实现层
+核心实现继续保留在以下目录中：
+- `collect/`
+- `scripts/`
+- `handlers/`
+- `assess/`
+- `runtime/`
+
+这样做的好处是：
+- 不需要大规模迁移旧代码
+- 兼容当前已有实现
+- 对外入口统一，对内职责仍清晰
+
+---
+
+## 3. 工作流总览
+
+```mermaid
+graph TD
+    A[阶段1: 静态分析] --> B[collect/static_analysis/static_analysis_*.json]
+    B --> C[阶段2: 基线骨架生成与Payload预填]
+    C --> D[baseline_samples/baseline_skeletons_*.json]
+    D --> E[阶段3: Playwright动态捕获]
+    E --> F[回填 captured_ciphertext / runtime_params]
+    F --> G[阶段4: Handler验证]
+    G --> H{是否验证通过}
+    H -->|是| I[VERIFIED 基线]
+    H -->|否| J[修正 Handler / 静态分析 / 基线]
+    I --> K[阶段5: 安全评估]
+    K --> L[assessment_results/*.json]
+    L --> M[阶段6: 报告与图表生成]
+    M --> N[report/*.html / *.md / *.json / charts/*.png]
+```
+
+---
+
+## 4. 推荐入口
+
+### 4.1 一键全链路（推荐）
+```bash
+python main.py --url http://encrypt-labs-main/easy.php --username admin --password 123456
+```
+
+说明：
+- 这是**最终答辩版推荐说法**：从项目根目录 `main.py` 进入。
+- `main.py` 内部会转发到 `phases/run_full_pipeline.py`。
+
+### 4.1.1 推荐日志方式（避免 PowerShell 重定向乱码）
+```bash
+python main.py --url http://encrypt-labs-main/easy.php --username admin --password 123456 --log-file runtime/full_pipeline_utf8.log
+```
+
+说明：
+ - 推荐使用 `--log-file` 让总控入口在 Python 内部按 **UTF-8** 写日志。
+ - 不建议依赖 PowerShell 的 `>` / `2>&1` 做主日志，因为 Windows 下这类重定向常会生成 UTF-16/控制台编码混杂日志，看起来像“中文乱码”或夹杂空字符。
+
+### 4.1.2 内部阶段入口（用于开发与调试）
+```bash
+python phases/run_full_pipeline.py --url http://encrypt-labs-main/easy.php --username admin --password 123456
+```
+
+说明：
+- `phases/` 是**内部阶段编排层**。
+- 日常开发、单阶段调试可以直接使用 `phases/` 下入口。
+
+---
+
+## 5. 各阶段入口与核心实现映射
+
+| 阶段 | 推荐入口 | 核心实现 |
+|---|---|---|
+| Phase 0 | `phases/phase0_setup_env.ps1` | `scripts/setup_env.ps1` |
+| Phase 1 | `phases/phase1_static_analysis.py` | `collect/static_analyze.py` |
+| Phase 2 | `phases/phase2_prepare_baseline.py` | `scripts/init_baselines.py` |
+| Phase 3 | `phases/phase3_capture.py` | `scripts/capture_baseline_playwright.py` |
+| Phase 4 | `phases/phase4_verify_handlers.py` | `scripts/verify_handlers.py` |
+| Phase 5 | `phases/phase5_assess.py` | `assess/assess_endpoint.py` |
+| Phase 6 | `phases/phase6_generate_report.py` | `assess/report_gen.py`、`runtime/generate_profile_charts.py` |
+
+说明：
+- `phases/` 目录是新的**统一阶段入口层**。
+- 原来的 `collect/`、`scripts/`、`assess/`、`runtime/` 中脚本现在主要作为**核心实现层**保留。
+
+---
+
+## 6. 验证口径说明
+
+### 6.1 确定性算法
+如：
+- AES
+- DES
+- HMAC
+
+要求：
+- `handler_ciphertext` 与 `captured_ciphertext` 严格一致
+- 验证结果标记为 `MATCH`
+
+### 6.2 非确定性密文算法
+如：
+- RSA
+- AESRSA
+
+要求：
+- 不强求逐字节密文一致
+- 只要原语链路、输入、公钥和打包流程正确，就可标记为：
+  - `RSA_NONDETERMINISTIC_LOGIC_VALIDATED`
+
+### 6.3 服务端签名 / 前端仅打包端点
+如：
+- `signdataserver`
+- `norepeater`
+
+要求：
+- 不按“本地重算签名值”验证
+- 重点验证最终请求体字段组装与运行时参数回填
+- 验证结果标记为：
+  - `NO_CRYPTO`
+
+---
+
+## 7. 安全评估说明
+
+基于已验证的基线进行多场景测试，当前重点包括：
+
+- 基线重放
+- 明文参数注入 / 语义变异
+- 空值 / 超长值 / 特殊字符 / 类型错配 / 缺字段
+- 协议参数篡改（IV / Nonce / 时间戳 / 签名 / 密文字段）
+- 请求体回退篡改（必要时回退使用 `validation.trace` 中捕获的 `FETCH body`）
+
+评分配置来自：
+- `configs/scoring_profiles.yaml`
+
+当前内置 profile：
+- `default`
+- `crypto_focus`
+- `paper_v1`
+
+论文展示推荐：
+- `paper_v1`
+
+评分说明文档：
+- `configs/scoring_profiles.md`
+
+---
+
+## 8. 图表输出
+
+阶段 6 会同步生成 5 张图表，输出到：
+- `report/charts/`
+
+包括：
+1. `workflow_overview.png`
+2. `validation_comparison_distribution.png`
+3. `endpoint_security_scores.png`
+4. `profile_score_comparison.png`
+5. `scenario_status_distribution.png`
+
+---
+
+## 9. 目录结构
+
+```text
+.
+├── assess/                         # 安全评估与报告生成核心实现
+├── baseline_samples/               # 统一基线文件
+├── collect/                        # 静态分析与 AST 检测核心实现
+├── configs/                        # 全局配置、阶段配置、评分配置
+├── handlers/                       # 本地 Handler 与流水线执行框架
+├── phases/                         # 统一阶段入口层（推荐从这里执行）
+│   ├── common.py
+│   ├── phase0_setup_env.ps1
+│   ├── phase1_static_analysis.py
+│   ├── phase2_prepare_baseline.py
+│   ├── phase3_capture.py
+│   ├── phase4_verify_handlers.py
+│   ├── phase5_assess.py
+│   ├── phase6_generate_report.py
+│   └── run_full_pipeline.py
+├── report/                         # 最终报告与图表输出
+├── replay/                         # 参数变异与请求重放辅助模块
+├── runtime/                        # 运行时辅助文件（Playwright Hook、图表脚本、UTF-8 日志）
+│   ├── playwright_hook.js
+│   ├── generate_profile_charts.py
+│   └── full_pipeline_utf8.log
+├── scripts/                        # 仍被 phases 调用的核心实现脚本（非推荐直接入口）
+│   ├── init_baselines.py
+│   ├── capture_baseline_playwright.py
+│   ├── verify_handlers.py
+│   └── setup_env.ps1
+├── main.py                         # 项目对外统一入口（最终答辩版从这里进入）
+├── plan-reverseAnalysisPipeline.prompt.md
+├── README.md
+└── requirements.txt
+```
+
+---
+
+## 10. 环境准备
+
+### Python / Node / Playwright
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+npm install
+python -m playwright install chromium
+```
+
+### PowerShell 快速初始化
+```powershell
+.\phases\phase0_setup_env.ps1
+```
+
+---
+
+## 11. 当前建议的使用方式
+
+如果你只是想跑毕业设计主链路，推荐固定使用：
+
+- 用户名：`admin`
+- 密码：`123456`
+- URL：`http://encrypt-labs-main/easy.php`
+
+直接执行：
+```bash
+python main.py --url http://encrypt-labs-main/easy.php --username admin --password 123456
+```
+ 
+ 如果需要保存可读日志，推荐：
+```bash
+python main.py --url http://encrypt-labs-main/easy.php --username admin --password 123456 --log-file runtime/full_pipeline_utf8.log
+```
+
+---
+
+## 12. 当前注意事项
+
+1. `baseline_samples/` 中可能存在临时验证文件（如 `.tmp_verify.json`），正式运行时优先使用正式基线文件。
+2. 对外展示时推荐统一表述为：`main.py` 是项目入口，`phases/` 是内部阶段编排层。
+3. 旧脚本目录仍保留，是为了兼容与复用核心实现；日常答辩展示不建议直接从 `scripts/` 进入。
+4. 如果某个阶段失败，应优先回溯前一阶段产物，而不是跳过继续执行。
+5. 如果需要保留运行日志，请优先使用 `--log-file runtime/full_pipeline_utf8.log`，不要把 PowerShell 重定向日志作为主日志来源。
+6. 如果 Markdown/IDE 对 README 的目录锚点有警告，一般不影响项目实际运行。
+
+---
+
+## 13. 相关说明文档
+
+- 总体阶段计划：`plan-reverseAnalysisPipeline.prompt.md`
+- Handler 说明：`handlers/handlers.md`
+- 评分配置说明：`configs/scoring_profiles.md`
+
+---
+
+## 14. 一句话总结
+
+现在推荐的实际使用方式是：
+ 
+> **对外从 `main.py` 进入；内部由 `phases/` 串行编排完整链路；旧目录中的脚本继续作为核心实现保留。**
+

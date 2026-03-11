@@ -97,6 +97,122 @@ function getOutputVariable(path) {
     return null;
 }
 
+function resolveFunctionPath(path, functionName) {
+    const binding = path.scope.getBinding(functionName);
+    if (!binding) return null;
+
+    if (binding.path.isFunctionDeclaration()) {
+        return binding.path;
+    }
+
+    if (binding.path.isVariableDeclarator()) {
+        const init = binding.path.get('init');
+        if (init && (init.isFunctionExpression() || init.isArrowFunctionExpression())) {
+            return init;
+        }
+    }
+
+    if (binding.path.isFunctionExpression() || binding.path.isArrowFunctionExpression()) {
+        return binding.path;
+    }
+
+    return null;
+}
+
+function resolveObjectExpressionFromIdentifier(path, variableName) {
+    const binding = path.scope.getBinding(variableName);
+    if (!binding) return null;
+
+    if (binding.path.isVariableDeclarator()) {
+        const init = binding.path.get('init');
+        if (!init || !init.node) return null;
+
+        if (init.isObjectExpression()) {
+            return { node: init.node, analysisPath: init };
+        }
+
+        if (init.isIdentifier()) {
+            return resolveObjectExpressionFromIdentifier(init, init.node.name);
+        }
+
+        if (init.isCallExpression() && t.isIdentifier(init.node.callee)) {
+            return resolveReturnedObjectExpression(init, init.node.callee.name);
+        }
+    }
+
+    return null;
+}
+
+function resolveReturnedObjectExpression(path, functionName) {
+    const funcPath = resolveFunctionPath(path, functionName);
+    if (!funcPath) return null;
+
+    let resolvedObject = null;
+    funcPath.traverse({
+        ReturnStatement(returnPath) {
+            if (resolvedObject) return;
+            const arg = returnPath.get('argument');
+            if (!arg || !arg.node) return;
+
+            if (arg.isObjectExpression()) {
+                resolvedObject = { node: arg.node, analysisPath: returnPath };
+                return;
+            }
+
+            if (arg.isIdentifier()) {
+                const nested = resolveObjectExpressionFromIdentifier(returnPath, arg.node.name);
+                if (nested) {
+                    resolvedObject = nested;
+                }
+            }
+        }
+    });
+
+    return resolvedObject;
+}
+
+function enrichDetailWithInputMetadata(detailTarget, basePath, argPath) {
+    if (!argPath || !argPath.node) return;
+
+    detailTarget.input_expression = generate(argPath.node).code;
+
+    const derivation = analyzeDerivationExpression(argPath);
+    if (derivation) {
+        detailTarget.input_derivation = derivation;
+        const sourceKeys = extractSourcesFromDerivation(derivation);
+        if (sourceKeys.length > 0) {
+            detailTarget.input_source_keys = sourceKeys;
+        }
+    }
+}
+
+function buildPackingFieldSource(path, valueNode, analysisPath = path) {
+    const sourceInfo = {
+        source_expression: generate(valueNode).code,
+        source_type: valueNode.type
+    };
+
+    if (t.isIdentifier(valueNode)) {
+        sourceInfo.source_name = valueNode.name;
+        const derivation = traceVariableDerivation(analysisPath, valueNode.name) || traceVariableDerivation(path, valueNode.name);
+        if (derivation) {
+            sourceInfo.derivation = derivation;
+        }
+        return sourceInfo;
+    }
+
+    const constantVal = resolveConstantFromNode(valueNode, valueNode.loc ? valueNode.loc.start.line : 0);
+    if (constantVal) {
+        sourceInfo.source_name = constantVal.value;
+        sourceInfo.literal_value = constantVal.value;
+        sourceInfo.source_type = 'literal';
+        return sourceInfo;
+    }
+
+    sourceInfo.source_name = sourceInfo.source_expression;
+    return sourceInfo;
+}
+
 // 简单的变量值追踪器，返回 { value, line }
 function resolveVariableValueWithLoc(path, variableName) {
     const binding = path.scope.getBinding(variableName);
@@ -167,6 +283,19 @@ function traceVariableDerivation(path, variableName) {
              return analyzeDerivationExpression(init);
         }
     }
+
+    if (binding.constantViolations && binding.constantViolations.length > 0) {
+        for (let i = binding.constantViolations.length - 1; i >= 0; i--) {
+            const violation = binding.constantViolations[i];
+            if (violation.isAssignmentExpression()) {
+                const right = violation.get('right');
+                if (right && right.node) {
+                    const derived = analyzeDerivationExpression(right);
+                    if (derived) return derived;
+                }
+            }
+        }
+    }
     return null;
 }
 
@@ -235,6 +364,11 @@ function analyzeDerivationExpression(path) {
                  // 这里暂不深入追踪 DOM 元素引用，只是预留
             }
         }
+
+        const parentDerivation = analyzeDerivationExpression(path.get('object'));
+        if (parentDerivation && propName) {
+            return { type: "member_access", input: parentDerivation, property: propName };
+        }
     }
 
     // 2. 追踪变量引用
@@ -249,45 +383,63 @@ function analyzeDerivationExpression(path) {
     // 3. 链式调用 (.slice(...).padEnd(...))
     if (path.isCallExpression()) {
         const callee = path.get('callee');
-        
+        const fullCall = resolveMemberExpression(callee.node);
+
+        if (fullCall === 'JSON.stringify') {
+            const arg0 = path.get('arguments.0');
+            if (arg0 && arg0.node) {
+                const inner = analyzeDerivationExpression(arg0);
+                return {
+                    type: 'op',
+                    input: inner || { type: 'identifier', name: generate(arg0.node).code },
+                    op: 'JSON.stringify',
+                    args: []
+                };
+            }
+        }
+
         if (callee.isMemberExpression()) {
             const method = callee.node.property.name;
             const object = callee.get('object');
 
             // 特殊处理 CryptoJS 包装函数
-            const fullCall = resolveMemberExpression(callee.node);
             if (fullCall.includes('parse') && (fullCall.includes('Utf8') || fullCall.includes('Hex') || fullCall.includes('Base64'))) {
                  const arg0 = path.get('arguments.0');
                  if (arg0 && arg0.node) {
                      const inner = analyzeDerivationExpression(arg0);
-                     // 简化操作名称，去掉 'CryptoJS.enc.' 前缀
                      const cleanOp = fullCall.split('.').slice(-2).join('.');
                      if (inner) {
                          return { type: "op", input: inner, op: cleanOp, args: [] };
                      }
-                     // 支持参数本身是衍生链的情况
                      return { type: "op", input: analyzeDerivationExpression(arg0), op: cleanOp, args: [] };
                  }
             }
 
-            // 递归解析调用对象 (Chain source)
             const parentDerivation = analyzeDerivationExpression(object);
 
             if (parentDerivation) {
-                // [重点加强] 递归解析参数列表，而不仅仅是提取字面量
                 const args = path.get('arguments').map(argPath => {
-                    // a) 尝试作为 Derivation 表达式处理 (支持 "0" + var, var.slice 等)
                     const derivation = analyzeDerivationExpression(argPath);
                     if (derivation) return derivation;
-
-                    // b) 尝试作为简单类型提取（对象/数组等静态结构）
                     return extractArgumentValue(argPath.node, path);
                 });
 
-                // 构建操作链
                 return { type: "op", input: parentDerivation, op: method, args: args };
             }
         }
+
+        const analyzedArgs = path.get('arguments').map(argPath => {
+            const derivation = analyzeDerivationExpression(argPath);
+            if (derivation) return derivation;
+            return extractArgumentValue(argPath.node, path);
+        });
+
+        return {
+            type: 'call',
+            callee: fullCall || generate(path.node.callee).code,
+            args: analyzedArgs,
+            expression: generate(path.node).code
+        };
     }
 
     // 4. 二元运算 ("str" + var)
@@ -341,14 +493,9 @@ function extractSourcesFromDerivation(derivation) {
 
     if (derivation.args && Array.isArray(derivation.args)) {
         derivation.args.forEach(arg => {
-             // args 可能是 { type: "literal" } 或者 derivation 对象
-             if (arg.type && arg.type !== 'literal' && arg.type !== 'identifier') {
-                  // 如果是嵌套的 derivation 结构
-                  if (arg.input || arg.op || arg.left || arg.right) {
-                       sources = sources.concat(extractSourcesFromDerivation(arg));
-                  }
+             if (arg && typeof arg === 'object') {
+                  sources = sources.concat(extractSourcesFromDerivation(arg));
              }
-             // source 甚至可能直接作为一个 arg 出现（虽然根据 analyzeDerivationExpression 应该不会）
         });
     }
 
@@ -514,7 +661,7 @@ function detectPayloadPacking(path, contextName) {
     // Resolve Identifier to its definition
     if (bodyNode.type === 'Identifier') {
         const resolved = resolveVariableInitNode(path, bodyNode.name);
-        if (resolved && resolved.node) { // Check resolved.node
+        if (resolved && resolved.node) {
              bodyNode = resolved.node;
         }
     }
@@ -524,6 +671,7 @@ function detectPayloadPacking(path, contextName) {
     // Case A: Template Literal `key=${val}&...`
     if (bodyNode.type === 'TemplateLiteral') {
         let pattern = "";
+        const fieldSources = {};
         bodyNode.quasis.forEach((q, i) => {
             pattern += q.value.raw;
             if (i < bodyNode.expressions.length) {
@@ -536,9 +684,10 @@ function detectPayloadPacking(path, contextName) {
                 }
                 pattern += `{{${varName}}}`;
                 packing.push({ type: "template_insertion", position: i, variable: varName });
+                fieldSources[varName] = { source_name: varName, source_expression: generate(expr).code, source_type: expr.type };
             }
         });
-        return { type: "template", template: pattern, insertions: packing };
+        return { type: "template", template: pattern, insertions: packing, field_sources: fieldSources };
     }
     // Case B: JSON.stringify({...})
     else if (bodyNode.call && resolveMemberExpression(bodyNode.callee) === 'JSON.stringify') {
@@ -547,43 +696,63 @@ function detectPayloadPacking(path, contextName) {
 
     if (bodyNode.type === 'CallExpression' &&
              resolveMemberExpression(bodyNode.callee) === 'JSON.stringify') {
-        if (bodyNode.arguments.length > 0 && bodyNode.arguments[0].type === 'ObjectExpression') {
-            const data = {};
-            const derivations = {};
-            bodyNode.arguments[0].properties.forEach(p => {
-                if (p.type === 'ObjectProperty') {
-                    const key = p.key.name || p.key.value;
-                    let val = "unknown";
-                    if (p.value.type === 'Identifier') {
-                        val = p.value.name;
-                        const d = traceVariableDerivation(path, val);
-                        if (d) derivations[key] = d;
-                    }
-                    else if (p.value.type === 'StringLiteral') val = p.value.value;
-                    data[key] = val;
+        if (bodyNode.arguments.length > 0) {
+            let objectNode = null;
+            let objectAnalysisPath = path;
+            if (bodyNode.arguments[0].type === 'ObjectExpression') {
+                objectNode = bodyNode.arguments[0];
+            } else if (bodyNode.arguments[0].type === 'Identifier') {
+                const resolvedObject = resolveObjectExpressionFromIdentifier(path, bodyNode.arguments[0].name);
+                if (resolvedObject && resolvedObject.node) {
+                    objectNode = resolvedObject.node;
+                    objectAnalysisPath = resolvedObject.analysisPath || path;
                 }
-            });
-            return { type: "json", structure: data, value_derivations: derivations };
+            }
+
+            if (objectNode && objectNode.type === 'ObjectExpression') {
+                const data = {};
+                const derivations = {};
+                const fieldSources = {};
+                objectNode.properties.forEach(p => {
+                    if (p.type === 'ObjectProperty') {
+                        const key = p.key.name || p.key.value;
+                        const sourceInfo = buildPackingFieldSource(path, p.value, objectAnalysisPath);
+                        fieldSources[key] = sourceInfo;
+                        let val = sourceInfo.source_name || "unknown";
+                        if (sourceInfo.source_type === 'literal') {
+                            val = sourceInfo.literal_value;
+                        }
+                        if (sourceInfo.derivation && typeof val === 'string') {
+                            derivations[val] = sourceInfo.derivation;
+                        }
+                        data[key] = val;
+                    }
+                });
+                return { type: "json", structure: data, value_derivations: derivations, field_sources: fieldSources };
+            }
         }
     }
     // Case C: Object Literal (axios raw object)
     else if (bodyNode.type === 'ObjectExpression') {
          const data = {};
          const derivations = {};
+         const fieldSources = {};
          bodyNode.properties.forEach(p => {
             if (p.type === 'ObjectProperty') {
                 const key = p.key.name || p.key.value;
-                let val = "unknown";
-                if (p.value.type === 'Identifier') {
-                    val = p.value.name;
-                    const d = traceVariableDerivation(path, val);
-                    if (d) derivations[key] = d;
+                const sourceInfo = buildPackingFieldSource(path, p.value);
+                fieldSources[key] = sourceInfo;
+                let val = sourceInfo.source_name || "unknown";
+                if (sourceInfo.source_type === 'literal') {
+                    val = sourceInfo.literal_value;
                 }
-                else if (p.value.type === 'StringLiteral') val = p.value.value;
+                if (sourceInfo.derivation && typeof val === 'string') {
+                    derivations[val] = sourceInfo.derivation;
+                }
                 data[key] = val;
             }
         });
-        return { type: "object", structure: data, value_derivations: derivations }; 
+        return { type: "object", structure: data, value_derivations: derivations, field_sources: fieldSources };
     }
 
     // Case D: URLSearchParams (toString)
@@ -592,14 +761,13 @@ function detectPayloadPacking(path, contextName) {
         bodyNode.callee.property.name === 'toString')) {
 
         const objName = bodyNode.callee.object.name; // e.g. formData
-        // Trace back if it is URLSearchParams
         const init = resolveVariableInitNode(path, objName);
         if (init && init.node && init.node.type === 'NewExpression' &&
             resolveMemberExpression(init.node.callee) === 'URLSearchParams') {
 
-            // It is URLSearchParams, try to find .append calls in the same scope
             const params = {};
             const derivations = {};
+            const fieldSources = {};
             const scope = path.scope;
             const binding = scope.getBinding(objName);
 
@@ -608,22 +776,21 @@ function detectPayloadPacking(path, contextName) {
                     const parent = refPath.parentPath;
                     if (parent.isMemberExpression() && parent.node.property.name === 'append' &&
                         parent.parentPath.isCallExpression()) {
-                        const args = parent.parentPath.node.arguments;
-                        if (args.length >= 2) {
-                             const key = args[0].value || "unknown";
-                             const valNode = args[1];
-                             let valName = "unknown";
-                             if (valNode.type === 'Identifier') {
-                                 valName = valNode.name;
-                                 const d = traceVariableDerivation(path, valName); // Use current path scope? Or refPath scope? Usually same func.
-                                 if (d) derivations[key] = d;
+                        const appendArgs = parent.parentPath.node.arguments;
+                        if (appendArgs.length >= 2) {
+                             const key = appendArgs[0].value || "unknown";
+                             const sourceInfo = buildPackingFieldSource(path, appendArgs[1]);
+                             fieldSources[key] = sourceInfo;
+                             const valName = sourceInfo.source_name || "unknown";
+                             if (sourceInfo.derivation && typeof valName === 'string') {
+                                 derivations[valName] = sourceInfo.derivation;
                              }
                              params[key] = valName;
                         }
                     }
                 });
             }
-            return { type: "url_search_params", structure: params, value_derivations: derivations };
+            return { type: "url_search_params", structure: params, value_derivations: derivations, field_sources: fieldSources };
         }
     }
 
@@ -754,6 +921,9 @@ traverse(ast, {
                                     context: generate(path.node).code,
                                     output_variable: outputVar
                                  }];
+                                 if (path.get('arguments.0') && path.get('arguments.0').node) {
+                                     enrichDetailWithInputMetadata(details[0], path, path.get('arguments.0'));
+                                 }
 
                                  if (path.node.arguments.length > 0) {
                                      const dataNode = path.node.arguments[0];
@@ -816,26 +986,32 @@ traverse(ast, {
          const details = [];
          const args = path.node.arguments;
          const outputVar = getOutputVariable(path);
+         const wrappedCryptoCall = t.isMemberExpression(path.node.callee) &&
+             t.isIdentifier(path.node.callee.property, { name: 'toString' }) &&
+             t.isCallExpression(path.node.callee.object)
+             ? path.get('callee.object')
+             : null;
+         const cryptoArgs = wrappedCryptoCall ? wrappedCryptoCall.node.arguments : args;
+         const dataArgPath = wrappedCryptoCall ? path.get('callee.object.arguments.0') : path.get('arguments.0');
+         const keyArgPath = wrappedCryptoCall ? path.get('callee.object.arguments.1') : path.get('arguments.1');
+         const outputTransform = wrappedCryptoCall ? generate(path.node).code : null;
 
          // 如果是加密/签名/哈希操作，尝试提取更详细的上下文 (Key/IV/Payload)
          if (['encrypt', 'decrypt', 'sign', 'hash'].includes(operation)) {
              // 1. Data (Payload) Analysis
-             if (args.length > 0) {
-                 const dataNode = args[0];
+             if (cryptoArgs.length > 0 && dataArgPath && dataArgPath.node) {
+                 const dataNode = dataArgPath.node;
                  const targetNodes = [];
 
-                 // Collect identifiers to analyze
                  if (t.isIdentifier(dataNode)) {
                      targetNodes.push(dataNode);
                  } else if (t.isBinaryExpression(dataNode)) {
-                     // Handle simple concatenation: data + nonce
                      if (t.isIdentifier(dataNode.left)) targetNodes.push(dataNode.left);
                      if (t.isIdentifier(dataNode.right)) targetNodes.push(dataNode.right);
                  }
 
                  targetNodes.forEach(node => {
                      const schema = inferPayloadStructure(path, node.name);
-                     // Find definition line for correct ordering
                      const defLine = resolveVariableLine(path, node.name);
 
                      if (schema) {
@@ -850,16 +1026,15 @@ traverse(ast, {
              }
 
              // 2. Key Analysis
-             if (args.length > 1) {
-                 const keyNode = args[1];
+             if (cryptoArgs.length > 1 && keyArgPath && keyArgPath.node) {
+                 const keyNode = keyArgPath.node;
                  let resolvedKey = null;
                  let keyContext = "";
-                 let definitionLine = 0; // 新增：定义行号
+                 let definitionLine = 0;
 
                  if (t.isStringLiteral(keyNode)) {
                      resolvedKey = keyNode.value;
                      keyContext = `Literal: "${keyNode.value}"`;
-                     // 如果是字面量，定义行即使用行
                      definitionLine = path.node.loc.start.line;
                  } else if (t.isIdentifier(keyNode)) {
                      keyContext = `Variable: ${keyNode.name}`;
@@ -869,7 +1044,6 @@ traverse(ast, {
                          definitionLine = res.line;
                          keyContext += ` (Resolved: "${resolvedKey}")`;
                      } else {
-                         // 尝试追踪衍生逻辑
                          const derivation = traceVariableDerivation(path, keyNode.name);
                          if (derivation) {
                              definitionLine = resolveVariableLine(path, keyNode.name);
@@ -881,7 +1055,6 @@ traverse(ast, {
                                  derivation: derivation
                              });
                          } else {
-                             // 没解析到，但也得有个行号，暂且用调用行
                              definitionLine = path.node.loc.start.line;
                          }
                      }
@@ -890,7 +1063,7 @@ traverse(ast, {
                  if (resolvedKey) {
                      details.push({
                          operation: "setkey",
-                         line: definitionLine > 0 ? definitionLine : path.node.loc.start.line, // 优先使用定义行号
+                         line: definitionLine > 0 ? definitionLine : path.node.loc.start.line,
                          context: keyContext,
                          resolved_value: resolvedKey
                      });
@@ -898,8 +1071,8 @@ traverse(ast, {
              }
 
              // 3. Options (IV) Analysis
-             if (args.length > 2 && t.isObjectExpression(args[2])) {
-                 args[2].properties.forEach(prop => {
+             if (cryptoArgs.length > 2 && t.isObjectExpression(cryptoArgs[2])) {
+                 cryptoArgs[2].properties.forEach(prop => {
                      if (t.isObjectProperty(prop) && t.isIdentifier(prop.key) && prop.key.name === 'iv') {
                          let resolvedIv = null;
                          let ivContext = "";
@@ -948,12 +1121,19 @@ traverse(ast, {
          }
 
          // 添加基础操作记录
-         details.push({
+         const opDetail = {
             operation: operation,
             line: path.node.loc ? path.node.loc.start.line : 0,
             context: generate(path.node).code,
             output_variable: outputVar
-         });
+         };
+         if (outputTransform) {
+            opDetail.output_transform = outputTransform;
+         }
+         if (dataArgPath && dataArgPath.node) {
+            enrichDetailWithInputMetadata(opDetail, path, dataArgPath);
+         }
+         details.push(opDetail);
 
          findings.push({
           library: 'CryptoJS',

@@ -6,181 +6,98 @@
 
 # Global settings
 global:
-  project_name: "API Security Assessment"
-  version: "0.1.0"
-  log_level: "INFO"
-  output_base: "./output"
+  project_name: "Web API 前端加密逆向与安全评估"
+  version: "1.0.0"
+  target_url: "http://encrypt-labs-main/easy.php"
+  default_username: "admin"
+  default_password: "123456"
 
 # -----------------------------------------------------------------------------
 # Phase 0: Environment Setup
 # -----------------------------------------------------------------------------
 phase0:
-  name: "Environment Setup"
-  description: "Initialize development environment and dependencies"
-  scripts:
-    - scripts/setup_env.sh
-    - scripts/setup_env.ps1
-  checks:
-    - python_version: ">=3.8"
-    - playwright_installed: true
-  outputs: []
+  name: "环境准备"
+  entry: "phases/phase0_setup_env.ps1"
+  outputs:
+    - ".venv/"
+    - "node_modules/"
 
 # -----------------------------------------------------------------------------
 # Phase 1: Baseline Capture
 # -----------------------------------------------------------------------------
 phase1:
-  name: "Baseline Capture"
-  description: "Capture baseline API requests and responses"
-  script: scripts/capture_baseline.py
-  inputs:
-    target_url: "${TARGET_URL}"
-    # Or specify in configs/api_config.yaml
+  name: "静态分析"
+  entry: "phases/phase1_static_analysis.py"
+  core_script: "collect/static_analyze.py"
   outputs:
-    - baseline_samples/
-  options:
-    timeout: 30
-    capture_method: "requests"  # or "playwright"
-    save_format: "json"
+    - "collect/static_analysis/static_analysis_*.json"
 
 # -----------------------------------------------------------------------------
 # Phase 2: JavaScript Collection
 # -----------------------------------------------------------------------------
 phase2:
-  name: "JavaScript Collection"
-  description: "Collect JavaScript files from target application"
-  script: collect/fetch_js.py
-  inputs:
-    target_url: "${TARGET_URL}"
+  name: "基线骨架生成与 Payload 预填"
+  entry: "phases/phase2_prepare_baseline.py"
+  core_script: "scripts/init_baselines.py"
   outputs:
-    - collected_js/
-  options:
-    download_external: true
-    extract_inline: true
-    follow_imports: true
-    max_depth: 3
+    - "baseline_samples/baseline_skeletons_*.json"
 
 # -----------------------------------------------------------------------------
 # Phase 3: JavaScript Parsing
 # -----------------------------------------------------------------------------
 phase3:
-  name: "JavaScript Parsing"
-  description: "Parse JavaScript for crypto patterns using AST analysis"
-  script: collect/parse_js.py
-  inputs:
-    - collected_js/
+  name: "Playwright 动态捕获"
+  entry: "phases/phase3_capture.py"
+  core_script: "scripts/capture_baseline_playwright.py"
   outputs:
-    - analysis_results/
-  options:
-    detect_crypto: true
-    extract_functions: true
-    map_api_calls: true
+    - "baseline_samples/baseline_skeletons_*.json (validation 回填)"
 
 # -----------------------------------------------------------------------------
 # Phase 4: Crypto Detection
 # -----------------------------------------------------------------------------
 phase4:
-  name: "Crypto Detection"
-  description: "Detect and analyze cryptographic implementations"
-  script: analysis/detect_crypto.py
-  inputs:
-    parse_results: analysis_results/
-    baseline_samples: baseline_samples/
+  name: "Handler 正确性验证"
+  entry: "phases/phase4_verify_handlers.py"
+  core_script: "scripts/verify_handlers.py"
   outputs:
-    - crypto_analysis/
-  options:
-    signature_db: configs/signatures.json
-    analyze_params: true
-    assess_security: true
+    - "baseline_samples/baseline_skeletons_*.json (VERIFIED 状态更新)"
 
 # -----------------------------------------------------------------------------
 # Phase 5: Request Replay
 # -----------------------------------------------------------------------------
 phase5:
-  name: "Request Replay"
-  description: "Replay captured requests with crypto transformations"
-  script: replay/replay_request.py
-  inputs:
-    baseline: baseline_samples/
+  name: "安全评估"
+  entry: "phases/phase5_assess.py"
+  core_script: "assess/assess_endpoint.py"
   outputs:
-    - replay_results/
-  options:
-    transforms:
-      - update_timestamp
-      - regenerate_sign
-    compare_responses: true
+    - "assessment_results/assessment_profile_default.json"
+    - "assessment_results/assessment_profile_paper_v1.json"
 
 # -----------------------------------------------------------------------------
 # Phase 6: Parameter Mutation
 # -----------------------------------------------------------------------------
 phase6:
-  name: "Parameter Mutation"
-  description: "Generate parameter mutations for security testing"
-  script: replay/mutate_params.py
-  inputs:
-    baseline: baseline_samples/
+  name: "报告与图表生成"
+  entry: "phases/phase6_generate_report.py"
+  core_scripts:
+    - "assess/report_gen.py"
+    - "runtime/generate_profile_charts.py"
   outputs:
-    - mutations/
-  strategies:
-    - boundary
-    - type_confusion
-    - injection
-    - crypto
-    - encoding
-    - empty_null
-
-# -----------------------------------------------------------------------------
-# Phase 7: Security Assessment
-# -----------------------------------------------------------------------------
-phase7:
-  name: "Security Assessment"
-  description: "Assess endpoint security based on analysis results"
-  script: assess/assess_endpoint.py
-  inputs:
-    detection: crypto_analysis/
-  outputs:
-    - assessment_results/
-  checks:
-    - crypto_weaknesses
-    - hardcoded_secrets
-    - injection_vulnerabilities
-    - authentication_flaws
-
-# -----------------------------------------------------------------------------
-# Phase 8: Report Generation
-# -----------------------------------------------------------------------------
-phase8:
-  name: "Report Generation"
-  description: "Generate comprehensive security assessment reports"
-  script: assess/report_gen.py
-  inputs:
-    assessment: assessment_results/
-  outputs:
-    - reports/
-  formats:
-    - html
-    - markdown
-    - json
+    - "report/report_profile_paper_v1.html"
+    - "report/report_profile_paper_v1.md"
+    - "report/report_profile_paper_v1.json"
+    - "report/charts/*.png"
 
 # -----------------------------------------------------------------------------
 # Pipeline Execution Order
 # -----------------------------------------------------------------------------
 pipeline:
   sequence:
-    - phase0  # Setup
-    - phase1  # Baseline Capture
-    - phase2  # JS Collection
-    - phase3  # JS Parsing
-    - phase4  # Crypto Detection
-    - phase5  # Request Replay
-    - phase6  # Parameter Mutation
-    - phase7  # Security Assessment
-    - phase8  # Report Generation
-  
-  # Dependencies (phases that must complete before starting)
-  dependencies:
-    phase3: [phase2]
-    phase4: [phase3, phase1]
-    phase5: [phase4]
-    phase6: [phase1]
-    phase7: [phase4, phase5, phase6]
-    phase8: [phase7]
+    - phase0
+    - phase1
+    - phase2
+    - phase3
+    - phase4
+    - phase5
+    - phase6
+  full_run_entry: "phases/run_full_pipeline.py"

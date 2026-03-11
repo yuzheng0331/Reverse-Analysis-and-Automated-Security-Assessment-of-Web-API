@@ -415,6 +415,14 @@ class VariableDerivationOperation(CryptoOperation):
             if not target or not derivation_rule:
                 return HandlerResult(success=False, error="Missing target or derivation rule")
 
+            # 如果运行时已注入 key/iv，验证阶段优先使用捕获值，避免被本地随机衍生覆盖
+            if target == "key" and context.key is not None:
+                context.logs.append("Derived key skipped: using injected runtime key")
+                return HandlerResult(success=True, output=context.plaintext, context=context)
+            if target == "iv" and context.iv is not None:
+                context.logs.append("Derived iv skipped: using injected runtime iv")
+                return HandlerResult(success=True, output=context.plaintext, context=context)
+
             # 递归计算
             resolved_value = self._evaluate(derivation_rule, base_payload)
 

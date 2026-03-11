@@ -10,7 +10,6 @@ import json
 import asyncio
 import argparse
 import os
-import sys
 from pathlib import Path
 from playwright.async_api import async_playwright
 from dotenv import load_dotenv
@@ -22,6 +21,115 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 HOOK_SCRIPT_PATH = BASE_DIR / "runtime" / "playwright_hook.js"
 SKELETONS_DIR = BASE_DIR / "baseline_samples"
+
+
+def _expected_capture_type(step):
+    algorithm = str(step.get("algorithm", "")).upper()
+    step_type = str(step.get("step_type", "")).lower()
+    if step_type not in ["encrypt", "sign"]:
+        return None
+    if algorithm == "AES":
+        return "AES_OUTPUT"
+    if algorithm == "DES":
+        return "DES_OUTPUT"
+    if algorithm == "RSA":
+        return "RSA_OUTPUT"
+    if algorithm in ["HMACSHA256", "HMACSHA256()"]:
+        return "HMAC_OUTPUT"
+    return None
+
+
+def _extract_fetch_body_fields(fetch_item):
+    if not isinstance(fetch_item, dict):
+        return {}
+    body_json = fetch_item.get("body_json")
+    if isinstance(body_json, dict):
+        return body_json
+    body_form = fetch_item.get("body_form")
+    if isinstance(body_form, dict):
+        return body_form
+    return {}
+
+
+def _build_runtime_capture(entry, captured_data):
+    runtime_params = {}
+    named_outputs = {}
+    captured_ciphertext = None
+    execution_flow = entry.get("meta", {}).get("execution_flow", []) or []
+    endpoint_url = entry.get("meta", {}).get("url", "")
+
+    output_events = [item for item in captured_data if str(item.get("type", "")).endswith("_OUTPUT")]
+    used_indices = set()
+    crypto_steps = [step for step in execution_flow if str(step.get("step_type", "")).lower() in ["encrypt", "sign"]]
+
+    for step in crypto_steps:
+        expected_type = _expected_capture_type(step)
+        if not expected_type:
+            continue
+        selected = None
+        selected_index = None
+        for idx, item in enumerate(output_events):
+            if idx in used_indices:
+                continue
+            if item.get("type") == expected_type:
+                selected = item
+                selected_index = idx
+                break
+        if selected is None:
+            continue
+        used_indices.add(selected_index)
+        output_value = selected.get("ciphertext")
+        output_variable = step.get("output_variable")
+        if output_variable and output_value is not None:
+            named_outputs[output_variable] = output_value
+            runtime_params[output_variable] = output_value
+        if output_value is not None:
+            captured_ciphertext = output_value
+
+    for item in captured_data:
+        ctype = item.get("type", "")
+        if ctype in ["AES", "DES", "HMAC", "RSA"]:
+            for key_name in ["key", "iv", "message", "mode", "public_key"]:
+                if key_name in item and item.get(key_name) is not None and key_name not in runtime_params:
+                    runtime_params[key_name] = item.get(key_name)
+        elif ctype == "RSA_KEY":
+            if item.get("public_key"):
+                runtime_params.setdefault("public_key", item.get("public_key"))
+
+    matching_fetches = []
+    for item in captured_data:
+        if item.get("type") != "FETCH":
+            continue
+        fetch_url = str(item.get("url", ""))
+        if endpoint_url and endpoint_url in fetch_url:
+            matching_fetches.append(item)
+        elif endpoint_url and fetch_url.endswith(endpoint_url.split("/")[-1]):
+            matching_fetches.append(item)
+
+    for fetch_item in matching_fetches:
+        body_fields = _extract_fetch_body_fields(fetch_item)
+        if not body_fields:
+            continue
+        for step in execution_flow:
+            if str(step.get("step_type", "")).lower() != "pack":
+                continue
+            packing_info = (step.get("runtime_args", {}) or {}).get("packing_info", {}) or {}
+            structure = packing_info.get("structure", {}) or {}
+            for field_name, source_name in structure.items():
+                if field_name in body_fields:
+                    runtime_params[field_name] = body_fields[field_name]
+                    runtime_params.setdefault(str(source_name), body_fields[field_name])
+
+    if captured_ciphertext is None and named_outputs:
+        captured_ciphertext = list(named_outputs.values())[-1]
+
+    return {
+        "captured_ciphertext": captured_ciphertext,
+        "runtime_params": runtime_params,
+        "named_outputs": named_outputs,
+        "trace": list(captured_data)
+    }
+
 
 async def run_capture(target_url, endpoints, skeleton_file):
     """
@@ -165,38 +273,33 @@ async def run_capture(target_url, endpoints, skeleton_file):
                 print(f"    Error invoking: {e}", flush=True)
 
             # 4. Process Captured Data
-            valid_capture = {}
-
-            # Prioritize finding the output ciphertext
-            # We assume the last relevant OUTPUT log is the one we want
-            for cap in reversed(captured_data):
-                ctype = cap.get("type", "")
-                
-                # Check for output types (AES_OUTPUT, RSA_OUTPUT, etc.)
-                if ctype.endswith("_OUTPUT") and "ciphertext" not in valid_capture:
-                    valid_capture["ciphertext"] = cap.get("ciphertext")
-                
-                # Check for parameter types (AES, RSA, DES, HMAC)
-                elif ctype in ["AES", "DES", "RSA", "HMAC"]:
-                    # Capture parameters if not set
-                    for k in ["key", "iv", "message", "mode"]:
-                        if k in cap and k not in valid_capture:
-                            valid_capture[k] = cap[k]
+            capture_summary = _build_runtime_capture(ep, captured_data)
+            runtime_params = capture_summary.get("runtime_params", {})
+            named_outputs = capture_summary.get("named_outputs", {})
+            captured_ciphertext = capture_summary.get("captured_ciphertext")
 
             # 5. Update Skeleton in memory
-            if "ciphertext" in valid_capture:
-                ep["validation"]["captured_ciphertext"] = valid_capture["ciphertext"]
-                ep["validation"]["runtime_params"] = {
-                    k: v for k, v in valid_capture.items() if k != "ciphertext"
-                }
-                ep["validation"]["trace"] = list(captured_data) # Store full trace
+            if captured_ciphertext is not None:
+                ep.setdefault("validation", {})["captured_ciphertext"] = captured_ciphertext
 
-                print(f"    [OK] Captured Ciphertext: {str(valid_capture.get('ciphertext'))[:30]}...")
-                if "key" in valid_capture:
-                    print(f"    [OK] Captured Key: {valid_capture['key']}")
+            if runtime_params:
+                existing_runtime = ep.setdefault("validation", {}).get("runtime_params", {}) or {}
+                existing_runtime.update(runtime_params)
+                ep["validation"]["runtime_params"] = existing_runtime
+
+            if captured_data:
+                ep.setdefault("validation", {})["trace"] = list(captured_data)
+
+            if captured_ciphertext is not None or runtime_params or captured_data:
+                if captured_ciphertext is not None:
+                    print(f"    [OK] Captured Ciphertext: {str(captured_ciphertext)[:30]}...", flush=True)
+                if runtime_params:
+                    print(f"    [OK] Runtime Params: {sorted(runtime_params.keys())}", flush=True)
+                if named_outputs:
+                    print(f"    [OK] Output Vars: {sorted(named_outputs.keys())}", flush=True)
                 updated_count += 1
             else:
-                print("    [-] Capture empty or missing ciphertext.")
+                print("    [-] Capture empty.")
 
         await browser.close()
 

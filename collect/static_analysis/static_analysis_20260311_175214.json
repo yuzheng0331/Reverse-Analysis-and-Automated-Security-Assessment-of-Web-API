@@ -1,0 +1,3894 @@
+{
+  "target_url": "http://encrypt-labs-main/easy.php",
+  "analyzed_at": "2026-03-11T17:52:08.659711+00:00",
+  "summary": {
+    "total_files": 4,
+    "total_endpoints": 8,
+    "total_crypto_patterns": 20,
+    "total_functions": 562,
+    "total_security_findings": 2
+  },
+  "collected_files": [
+    {
+      "type": "external",
+      "url": "http://encrypt-labs-main/js/crypto-js.min.js",
+      "file_path": "D:\\Reverse Analysis and Automated Security Assessment of Web API\\collect\\collected_js\\normalized\\crypto-js.min_1_2_3.js",
+      "size": 77266
+    },
+    {
+      "type": "external",
+      "url": "http://encrypt-labs-main/js/jsencrypt.min.js",
+      "file_path": "D:\\Reverse Analysis and Automated Security Assessment of Web API\\collect\\collected_js\\normalized\\jsencrypt.min_1_2_3.js",
+      "size": 94218
+    },
+    {
+      "type": "external",
+      "url": "https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js",
+      "file_path": "D:\\Reverse Analysis and Automated Security Assessment of Web API\\collect\\collected_js\\normalized\\forge.min_1_2_3.js",
+      "size": 406970
+    },
+    {
+      "type": "external",
+      "url": "http://encrypt-labs-main/js/easy.js",
+      "file_path": "D:\\Reverse Analysis and Automated Security Assessment of Web API\\collect\\collected_js\\normalized\\easy_1_2_3.js",
+      "size": 11393
+    }
+  ],
+  "endpoints": [
+    {
+      "url": "http://encrypt-labs-main/encrypt/aes.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendDataAes"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/aesserver.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "fetchAndSendDataAes"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/rsa.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendEncryptedDataRSA"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/aesrsa.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendDataAesRsa"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/des.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "encryptAndSendDataDES"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/signdata.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendDataWithNonce"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/signdataserver.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendDataWithNonceServer"
+    },
+    {
+      "url": "http://encrypt-labs-main/encrypt/norepeater.php",
+      "method": "POST",
+      "source": "onclick",
+      "trigger_function": "sendLoginRequest"
+    }
+  ],
+  "crypto_patterns": [
+    {
+      "library": "Generic (Possible JSEncrypt)",
+      "algorithm": "RSA/Unknown",
+      "operation": "encrypt",
+      "function_name": "encrypt",
+      "file": "crypto-js.min_1_2_3.js",
+      "line": 879,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "encrypt",
+          "line": 879,
+          "context": "t(i).encrypt(e, r, i, n)"
+        }
+      ]
+    },
+    {
+      "library": "Generic (Possible JSEncrypt)",
+      "algorithm": "RSA/Unknown",
+      "operation": "encrypt",
+      "function_name": "encrypt",
+      "file": "jsencrypt.min_1_2_3.js",
+      "line": 1659,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "encrypt",
+          "line": 1659,
+          "context": "this.getKey().encrypt(t)"
+        }
+      ]
+    },
+    {
+      "library": "Network",
+      "algorithm": "PayloadPacking",
+      "operation": "pack",
+      "function_name": "sendDataAes",
+      "file": "easy_1_2_3.js",
+      "line": 19,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "pack",
+          "line": 19,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/x-www-form-urlencoded; charset=utf-8\"\n  },\n  body: params\n})",
+          "info": {
+            "type": "template",
+            "template": "encryptedData={{encrypted}}",
+            "insertions": [
+              {
+                "type": "template_insertion",
+                "position": 0,
+                "variable": "encrypted"
+              }
+            ],
+            "field_sources": {
+              "encrypted": {
+                "source_name": "encrypted",
+                "source_expression": "encodeURIComponent(encrypted)",
+                "source_type": "CallExpression"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "library": "CryptoJS",
+      "algorithm": "AES",
+      "operation": "DataStructure,encrypt,setiv,setkey",
+      "function_name": "sendDataAes",
+      "file": "easy_1_2_3.js",
+      "line": 10,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "DataStructure",
+          "line": 10,
+          "context": "Inferred Payload Keys for 'jsonData': [\"username\",\"password\"]",
+          "inferred_keys": [
+            "username",
+            "password"
+          ]
+        },
+        {
+          "operation": "setkey",
+          "line": 11,
+          "context": "Variable: key (Resolved: \"1234567890123456\")",
+          "resolved_value": "1234567890123456"
+        },
+        {
+          "operation": "setiv",
+          "line": 12,
+          "context": "Variable: iv (Resolved: \"1234567890123456\")",
+          "resolved_value": "1234567890123456"
+        },
+        {
+          "operation": "encrypt",
+          "line": 13,
+          "context": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "output_variable": "encrypted",
+          "input_expression": "jsonData",
+          "input_derivation": {
+            "type": "op",
+            "input": {
+              "type": "identifier",
+              "name": "formData"
+            },
+            "op": "JSON.stringify",
+            "args": []
+          }
+        }
+      ]
+    },
+    {
+      "library": "Network",
+      "algorithm": "PayloadPacking",
+      "operation": "pack",
+      "function_name": "sendEncryptedDataRSA",
+      "file": "easy_1_2_3.js",
+      "line": 62,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "pack",
+          "line": 62,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/x-www-form-urlencoded\"\n  },\n  body: formData.toString()\n})",
+          "info": {
+            "type": "url_search_params",
+            "structure": {
+              "data": "encryptedData"
+            },
+            "value_derivations": {
+              "encryptedData": {
+                "type": "call",
+                "callee": "encryptor.encrypt",
+                "args": [
+                  {
+                    "type": "op",
+                    "input": {
+                      "type": "identifier",
+                      "name": "dataPacket"
+                    },
+                    "op": "JSON.stringify",
+                    "args": []
+                  }
+                ],
+                "expression": "encryptor.encrypt(dataString)"
+              }
+            },
+            "field_sources": {
+              "data": {
+                "source_expression": "encryptedData",
+                "source_type": "Identifier",
+                "source_name": "encryptedData",
+                "derivation": {
+                  "type": "call",
+                  "callee": "encryptor.encrypt",
+                  "args": [
+                    {
+                      "type": "op",
+                      "input": {
+                        "type": "identifier",
+                        "name": "dataPacket"
+                      },
+                      "op": "JSON.stringify",
+                      "args": []
+                    }
+                  ],
+                  "expression": "encryptor.encrypt(dataString)"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "DataStructure,encrypt,init,setkey",
+      "function_name": "sendEncryptedDataRSA",
+      "file": "easy_1_2_3.js",
+      "line": 52,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "DataStructure",
+          "line": 52,
+          "context": "Inferred Payload Keys: [\"username\",\"password\"]",
+          "inferred_keys": [
+            "username",
+            "password"
+          ]
+        },
+        {
+          "operation": "init",
+          "line": 53,
+          "context": "new JSEncrypt()"
+        },
+        {
+          "operation": "setkey",
+          "line": 54,
+          "context": "Variable: publicKey (Resolved)",
+          "resolved_value": "\n-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRvA7giwinEkaTYllDYCkzujvi\nNH+up0XAKXQot8RixKGpB7nr8AdidEvuo+wVCxZwDK3hlcRGrrqt0Gxqwc11btlM\nDSj92Mr3xSaJcshZU8kfj325L8DRh9jpruphHBfh955ihvbednGAvOHOrz3Qy3Cb\nocDbsNeCwNpRxwjIdQIDAQAB\n-----END PUBLIC KEY-----\n  "
+        },
+        {
+          "operation": "encrypt",
+          "line": 55,
+          "context": "encryptor.encrypt(dataString)",
+          "output_variable": "encryptedData",
+          "input_expression": "dataString",
+          "input_derivation": {
+            "type": "op",
+            "input": {
+              "type": "identifier",
+              "name": "dataPacket"
+            },
+            "op": "JSON.stringify",
+            "args": []
+          }
+        }
+      ]
+    },
+    {
+      "library": "Network",
+      "algorithm": "PayloadPacking",
+      "operation": "pack",
+      "function_name": "sendDataAesRsa",
+      "file": "easy_1_2_3.js",
+      "line": 100,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "pack",
+          "line": 100,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    encryptedData: encryptedData,\n    encryptedKey: encryptedKey,\n    encryptedIv: encryptedIv\n  })\n})",
+          "info": {
+            "type": "json",
+            "structure": {
+              "encryptedData": "encryptedData",
+              "encryptedKey": "encryptedKey",
+              "encryptedIv": "encryptedIv"
+            },
+            "value_derivations": {
+              "encryptedData": {
+                "type": "op",
+                "input": {
+                  "type": "call",
+                  "callee": "CryptoJS.AES.encrypt",
+                  "args": [
+                    {
+                      "type": "op",
+                      "input": {
+                        "type": "identifier",
+                        "name": "formData"
+                      },
+                      "op": "JSON.stringify",
+                      "args": []
+                    },
+                    {
+                      "type": "call",
+                      "callee": "CryptoJS.lib.WordArray.random",
+                      "args": [
+                        {
+                          "type": "literal",
+                          "value": 16
+                        }
+                      ],
+                      "expression": "CryptoJS.lib.WordArray.random(16)"
+                    },
+                    {
+                      "iv": {
+                        "type": "call",
+                        "callee": "CryptoJS.lib.WordArray.random",
+                        "args": [
+                          {
+                            "type": "literal",
+                            "value": 16
+                          }
+                        ],
+                        "expression": "CryptoJS.lib.WordArray.random(16)"
+                      },
+                      "mode": "CryptoJS.mode.CBC",
+                      "padding": "CryptoJS.pad.Pkcs7"
+                    }
+                  ],
+                  "expression": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                },
+                "op": "toString",
+                "args": []
+              },
+              "encryptedKey": {
+                "type": "call",
+                "callee": "rsa.encrypt",
+                "args": [
+                  {
+                    "type": "op",
+                    "input": {
+                      "type": "call",
+                      "callee": "CryptoJS.lib.WordArray.random",
+                      "args": [
+                        {
+                          "type": "literal",
+                          "value": 16
+                        }
+                      ],
+                      "expression": "CryptoJS.lib.WordArray.random(16)"
+                    },
+                    "op": "toString",
+                    "args": [
+                      "CryptoJS.enc.Base64"
+                    ]
+                  }
+                ],
+                "expression": "rsa.encrypt(key.toString(CryptoJS.enc.Base64))"
+              },
+              "encryptedIv": {
+                "type": "call",
+                "callee": "rsa.encrypt",
+                "args": [
+                  {
+                    "type": "op",
+                    "input": {
+                      "type": "call",
+                      "callee": "CryptoJS.lib.WordArray.random",
+                      "args": [
+                        {
+                          "type": "literal",
+                          "value": 16
+                        }
+                      ],
+                      "expression": "CryptoJS.lib.WordArray.random(16)"
+                    },
+                    "op": "toString",
+                    "args": [
+                      "CryptoJS.enc.Base64"
+                    ]
+                  }
+                ],
+                "expression": "rsa.encrypt(iv.toString(CryptoJS.enc.Base64))"
+              }
+            },
+            "field_sources": {
+              "encryptedData": {
+                "source_expression": "encryptedData",
+                "source_type": "Identifier",
+                "source_name": "encryptedData",
+                "derivation": {
+                  "type": "op",
+                  "input": {
+                    "type": "call",
+                    "callee": "CryptoJS.AES.encrypt",
+                    "args": [
+                      {
+                        "type": "op",
+                        "input": {
+                          "type": "identifier",
+                          "name": "formData"
+                        },
+                        "op": "JSON.stringify",
+                        "args": []
+                      },
+                      {
+                        "type": "call",
+                        "callee": "CryptoJS.lib.WordArray.random",
+                        "args": [
+                          {
+                            "type": "literal",
+                            "value": 16
+                          }
+                        ],
+                        "expression": "CryptoJS.lib.WordArray.random(16)"
+                      },
+                      {
+                        "iv": {
+                          "type": "call",
+                          "callee": "CryptoJS.lib.WordArray.random",
+                          "args": [
+                            {
+                              "type": "literal",
+                              "value": 16
+                            }
+                          ],
+                          "expression": "CryptoJS.lib.WordArray.random(16)"
+                        },
+                        "mode": "CryptoJS.mode.CBC",
+                        "padding": "CryptoJS.pad.Pkcs7"
+                      }
+                    ],
+                    "expression": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                  },
+                  "op": "toString",
+                  "args": []
+                }
+              },
+              "encryptedKey": {
+                "source_expression": "encryptedKey",
+                "source_type": "Identifier",
+                "source_name": "encryptedKey",
+                "derivation": {
+                  "type": "call",
+                  "callee": "rsa.encrypt",
+                  "args": [
+                    {
+                      "type": "op",
+                      "input": {
+                        "type": "call",
+                        "callee": "CryptoJS.lib.WordArray.random",
+                        "args": [
+                          {
+                            "type": "literal",
+                            "value": 16
+                          }
+                        ],
+                        "expression": "CryptoJS.lib.WordArray.random(16)"
+                      },
+                      "op": "toString",
+                      "args": [
+                        "CryptoJS.enc.Base64"
+                      ]
+                    }
+                  ],
+                  "expression": "rsa.encrypt(key.toString(CryptoJS.enc.Base64))"
+                }
+              },
+              "encryptedIv": {
+                "source_expression": "encryptedIv",
+                "source_type": "Identifier",
+                "source_name": "encryptedIv",
+                "derivation": {
+                  "type": "call",
+                  "callee": "rsa.encrypt",
+                  "args": [
+                    {
+                      "type": "op",
+                      "input": {
+                        "type": "call",
+                        "callee": "CryptoJS.lib.WordArray.random",
+                        "args": [
+                          {
+                            "type": "literal",
+                            "value": 16
+                          }
+                        ],
+                        "expression": "CryptoJS.lib.WordArray.random(16)"
+                      },
+                      "op": "toString",
+                      "args": [
+                        "CryptoJS.enc.Base64"
+                      ]
+                    }
+                  ],
+                  "expression": "rsa.encrypt(iv.toString(CryptoJS.enc.Base64))"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "library": "CryptoJS",
+      "algorithm": "AES",
+      "operation": "DataStructure,derive_iv,derive_key,encrypt",
+      "function_name": "sendDataAesRsa",
+      "file": "easy_1_2_3.js",
+      "line": 83,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "DataStructure",
+          "line": 83,
+          "context": "Inferred Payload Keys for 'jsonData': [\"username\",\"password\"]",
+          "inferred_keys": [
+            "username",
+            "password"
+          ]
+        },
+        {
+          "operation": "derive_key",
+          "line": 84,
+          "context": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "derivation": {
+            "type": "call",
+            "callee": "CryptoJS.lib.WordArray.random",
+            "args": [
+              {
+                "type": "literal",
+                "value": 16
+              }
+            ],
+            "expression": "CryptoJS.lib.WordArray.random(16)"
+          },
+          "target": "key"
+        },
+        {
+          "operation": "derive_iv",
+          "line": 85,
+          "context": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "derivation": {
+            "type": "call",
+            "callee": "CryptoJS.lib.WordArray.random",
+            "args": [
+              {
+                "type": "literal",
+                "value": 16
+              }
+            ],
+            "expression": "CryptoJS.lib.WordArray.random(16)"
+          },
+          "target": "iv"
+        },
+        {
+          "operation": "encrypt",
+          "line": 86,
+          "context": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "output_variable": "encryptedData",
+          "input_expression": "jsonData",
+          "input_derivation": {
+            "type": "op",
+            "input": {
+              "type": "identifier",
+              "name": "formData"
+            },
+            "op": "JSON.stringify",
+            "args": []
+          }
+        }
+      ]
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt,init,setkey",
+      "function_name": "sendDataAesRsa",
+      "file": "easy_1_2_3.js",
+      "line": 91,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "init",
+          "line": 91,
+          "context": "new JSEncrypt()"
+        },
+        {
+          "operation": "setkey",
+          "line": 92,
+          "context": "TemplateLiteral: \"-----BEGIN PUBLIC KE...\"",
+          "resolved_value": "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRvA7giwinEkaTYllDYCkzujvi\nNH+up0XAKXQot8RixKGpB7nr8AdidEvuo+wVCxZwDK3hlcRGrrqt0Gxqwc11btlM\nDSj92Mr3xSaJcshZU8kfj325L8DRh9jpruphHBfh955ihvbednGAvOHOrz3Qy3Cb\nocDbsNeCwNpRxwjIdQIDAQAB\n-----END PUBLIC KEY-----"
+        },
+        {
+          "operation": "encrypt",
+          "line": 98,
+          "context": "rsa.encrypt(key.toString(CryptoJS.enc.Base64))",
+          "output_variable": "encryptedKey",
+          "input_expression": "key.toString(CryptoJS.enc.Base64)",
+          "input_derivation": {
+            "type": "op",
+            "input": {
+              "type": "call",
+              "callee": "CryptoJS.lib.WordArray.random",
+              "args": [
+                {
+                  "type": "literal",
+                  "value": 16
+                }
+              ],
+              "expression": "CryptoJS.lib.WordArray.random(16)"
+            },
+            "op": "toString",
+            "args": [
+              "CryptoJS.enc.Base64"
+            ]
+          }
+        },
+        {
+          "operation": "encrypt",
+          "line": 99,
+          "context": "rsa.encrypt(iv.toString(CryptoJS.enc.Base64))",
+          "output_variable": "encryptedIv",
+          "input_expression": "iv.toString(CryptoJS.enc.Base64)",
+          "input_derivation": {
+            "type": "op",
+            "input": {
+              "type": "call",
+              "callee": "CryptoJS.lib.WordArray.random",
+              "args": [
+                {
+                  "type": "literal",
+                  "value": 16
+                }
+              ],
+              "expression": "CryptoJS.lib.WordArray.random(16)"
+            },
+            "op": "toString",
+            "args": [
+              "CryptoJS.enc.Base64"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "library": "Network",
+      "algorithm": "PayloadPacking",
+      "operation": "pack",
+      "function_name": "fetchAndSendDataAes",
+      "file": "easy_1_2_3.js",
+      "line": 142,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "pack",
+          "line": 142,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    encryptedData: encryptedData\n  })\n})",
+          "info": {
+            "type": "json",
+            "structure": {
+              "encryptedData": "encryptedData"
+            },
+            "value_derivations": {
+              "encryptedData": {
+                "type": "op",
+                "input": {
+                  "type": "call",
+                  "callee": "CryptoJS.AES.encrypt",
+                  "args": [
+                    {
+                      "type": "op",
+                      "input": {
+                        "type": "identifier",
+                        "name": "formData"
+                      },
+                      "op": "JSON.stringify",
+                      "args": []
+                    },
+                    {
+                      "type": "op",
+                      "input": null,
+                      "op": "Base64.parse",
+                      "args": []
+                    },
+                    {
+                      "iv": {
+                        "type": "op",
+                        "input": null,
+                        "op": "Base64.parse",
+                        "args": []
+                      },
+                      "mode": "CryptoJS.mode.CBC",
+                      "padding": "CryptoJS.pad.Pkcs7"
+                    }
+                  ],
+                  "expression": "CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                },
+                "op": "toString",
+                "args": []
+              }
+            },
+            "field_sources": {
+              "encryptedData": {
+                "source_expression": "encryptedData",
+                "source_type": "Identifier",
+                "source_name": "encryptedData",
+                "derivation": {
+                  "type": "op",
+                  "input": {
+                    "type": "call",
+                    "callee": "CryptoJS.AES.encrypt",
+                    "args": [
+                      {
+                        "type": "op",
+                        "input": {
+                          "type": "identifier",
+                          "name": "formData"
+                        },
+                        "op": "JSON.stringify",
+                        "args": []
+                      },
+                      {
+                        "type": "op",
+                        "input": null,
+                        "op": "Base64.parse",
+                        "args": []
+                      },
+                      {
+                        "iv": {
+                          "type": "op",
+                          "input": null,
+                          "op": "Base64.parse",
+                          "args": []
+                        },
+                        "mode": "CryptoJS.mode.CBC",
+                        "padding": "CryptoJS.pad.Pkcs7"
+                      }
+                    ],
+                    "expression": "CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                  },
+                  "op": "toString",
+                  "args": []
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "library": "CryptoJS",
+      "algorithm": "AES",
+      "operation": "DataStructure,derive_iv,derive_key,encrypt",
+      "function_name": "fetchAndSendDataAes",
+      "file": "easy_1_2_3.js",
+      "line": 121,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "derive_key",
+          "line": 121,
+          "context": "CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "derivation": {
+            "type": "op",
+            "input": null,
+            "op": "Base64.parse",
+            "args": []
+          },
+          "target": "key"
+        },
+        {
+          "operation": "derive_iv",
+          "line": 121,
+          "context": "CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "derivation": {
+            "type": "op",
+            "input": null,
+            "op": "Base64.parse",
+            "args": []
+          },
+          "target": "iv"
+        },
+        {
+          "operation": "DataStructure",
+          "line": 136,
+          "context": "Inferred Payload Keys for 'jsonData': [\"username\",\"password\"]",
+          "inferred_keys": [
+            "username",
+            "password"
+          ]
+        },
+        {
+          "operation": "encrypt",
+          "line": 137,
+          "context": "CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "output_variable": "encryptedData",
+          "input_expression": "jsonData",
+          "input_derivation": {
+            "type": "op",
+            "input": {
+              "type": "identifier",
+              "name": "formData"
+            },
+            "op": "JSON.stringify",
+            "args": []
+          }
+        }
+      ]
+    },
+    {
+      "library": "Network",
+      "algorithm": "PayloadPacking",
+      "operation": "pack",
+      "function_name": "encryptAndSendDataDES",
+      "file": "easy_1_2_3.js",
+      "line": 171,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "pack",
+          "line": 171,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: encryptedHex\n  })\n})",
+          "info": {
+            "type": "json",
+            "structure": {
+              "username": "username",
+              "password": "encryptedHex"
+            },
+            "value_derivations": {
+              "username": {
+                "type": "source",
+                "value": "username"
+              },
+              "encryptedHex": {
+                "type": "op",
+                "input": {
+                  "type": "member_access",
+                  "input": {
+                    "type": "call",
+                    "callee": "CryptoJS.DES.encrypt",
+                    "args": [
+                      {
+                        "type": "source",
+                        "value": "password"
+                      },
+                      {
+                        "type": "op",
+                        "input": {
+                          "type": "op",
+                          "input": {
+                            "type": "op",
+                            "input": {
+                              "type": "source",
+                              "value": "username"
+                            },
+                            "op": "slice",
+                            "args": [
+                              {
+                                "type": "literal",
+                                "value": 0
+                              },
+                              {
+                                "type": "literal",
+                                "value": 8
+                              }
+                            ]
+                          },
+                          "op": "padEnd",
+                          "args": [
+                            {
+                              "type": "literal",
+                              "value": 8
+                            },
+                            {
+                              "type": "literal",
+                              "value": "6"
+                            }
+                          ]
+                        },
+                        "op": "Utf8.parse",
+                        "args": []
+                      },
+                      {
+                        "iv": {
+                          "type": "op",
+                          "input": {
+                            "type": "binary_op",
+                            "op": "+",
+                            "left": {
+                              "type": "literal",
+                              "value": "9999"
+                            },
+                            "right": {
+                              "type": "op",
+                              "input": {
+                                "type": "op",
+                                "input": {
+                                  "type": "source",
+                                  "value": "username"
+                                },
+                                "op": "slice",
+                                "args": [
+                                  {
+                                    "type": "literal",
+                                    "value": 0
+                                  },
+                                  {
+                                    "type": "literal",
+                                    "value": 4
+                                  }
+                                ]
+                              },
+                              "op": "padEnd",
+                              "args": [
+                                {
+                                  "type": "literal",
+                                  "value": 4
+                                },
+                                {
+                                  "type": "literal",
+                                  "value": "9"
+                                }
+                              ]
+                            }
+                          },
+                          "op": "Utf8.parse",
+                          "args": []
+                        },
+                        "mode": "CryptoJS.mode.CBC",
+                        "padding": "CryptoJS.pad.Pkcs7"
+                      }
+                    ],
+                    "expression": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                  },
+                  "property": "ciphertext"
+                },
+                "op": "toString",
+                "args": [
+                  "CryptoJS.enc.Hex"
+                ]
+              }
+            },
+            "field_sources": {
+              "username": {
+                "source_expression": "username",
+                "source_type": "Identifier",
+                "source_name": "username",
+                "derivation": {
+                  "type": "source",
+                  "value": "username"
+                }
+              },
+              "password": {
+                "source_expression": "encryptedHex",
+                "source_type": "Identifier",
+                "source_name": "encryptedHex",
+                "derivation": {
+                  "type": "op",
+                  "input": {
+                    "type": "member_access",
+                    "input": {
+                      "type": "call",
+                      "callee": "CryptoJS.DES.encrypt",
+                      "args": [
+                        {
+                          "type": "source",
+                          "value": "password"
+                        },
+                        {
+                          "type": "op",
+                          "input": {
+                            "type": "op",
+                            "input": {
+                              "type": "op",
+                              "input": {
+                                "type": "source",
+                                "value": "username"
+                              },
+                              "op": "slice",
+                              "args": [
+                                {
+                                  "type": "literal",
+                                  "value": 0
+                                },
+                                {
+                                  "type": "literal",
+                                  "value": 8
+                                }
+                              ]
+                            },
+                            "op": "padEnd",
+                            "args": [
+                              {
+                                "type": "literal",
+                                "value": 8
+                              },
+                              {
+                                "type": "literal",
+                                "value": "6"
+                              }
+                            ]
+                          },
+                          "op": "Utf8.parse",
+                          "args": []
+                        },
+                        {
+                          "iv": {
+                            "type": "op",
+                            "input": {
+                              "type": "binary_op",
+                              "op": "+",
+                              "left": {
+                                "type": "literal",
+                                "value": "9999"
+                              },
+                              "right": {
+                                "type": "op",
+                                "input": {
+                                  "type": "op",
+                                  "input": {
+                                    "type": "source",
+                                    "value": "username"
+                                  },
+                                  "op": "slice",
+                                  "args": [
+                                    {
+                                      "type": "literal",
+                                      "value": 0
+                                    },
+                                    {
+                                      "type": "literal",
+                                      "value": 4
+                                    }
+                                  ]
+                                },
+                                "op": "padEnd",
+                                "args": [
+                                  {
+                                    "type": "literal",
+                                    "value": 4
+                                  },
+                                  {
+                                    "type": "literal",
+                                    "value": "9"
+                                  }
+                                ]
+                              }
+                            },
+                            "op": "Utf8.parse",
+                            "args": []
+                          },
+                          "mode": "CryptoJS.mode.CBC",
+                          "padding": "CryptoJS.pad.Pkcs7"
+                        }
+                      ],
+                      "expression": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                    },
+                    "property": "ciphertext"
+                  },
+                  "op": "toString",
+                  "args": [
+                    "CryptoJS.enc.Hex"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "library": "CryptoJS",
+      "algorithm": "DES",
+      "operation": "DataStructure,derive_iv,derive_key,encrypt",
+      "function_name": "encryptAndSendDataDES",
+      "file": "easy_1_2_3.js",
+      "line": 162,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "DataStructure",
+          "line": 162,
+          "context": "Inferred Payload Keys for 'password': [\"password\"]",
+          "inferred_keys": [
+            "password"
+          ]
+        },
+        {
+          "operation": "derive_key",
+          "line": 163,
+          "context": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "derivation": {
+            "type": "op",
+            "input": {
+              "type": "op",
+              "input": {
+                "type": "op",
+                "input": {
+                  "type": "source",
+                  "value": "username"
+                },
+                "op": "slice",
+                "args": [
+                  {
+                    "type": "literal",
+                    "value": 0
+                  },
+                  {
+                    "type": "literal",
+                    "value": 8
+                  }
+                ]
+              },
+              "op": "padEnd",
+              "args": [
+                {
+                  "type": "literal",
+                  "value": 8
+                },
+                {
+                  "type": "literal",
+                  "value": "6"
+                }
+              ]
+            },
+            "op": "Utf8.parse",
+            "args": []
+          },
+          "target": "key"
+        },
+        {
+          "operation": "derive_iv",
+          "line": 164,
+          "context": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "derivation": {
+            "type": "op",
+            "input": {
+              "type": "binary_op",
+              "op": "+",
+              "left": {
+                "type": "literal",
+                "value": "9999"
+              },
+              "right": {
+                "type": "op",
+                "input": {
+                  "type": "op",
+                  "input": {
+                    "type": "source",
+                    "value": "username"
+                  },
+                  "op": "slice",
+                  "args": [
+                    {
+                      "type": "literal",
+                      "value": 0
+                    },
+                    {
+                      "type": "literal",
+                      "value": 4
+                    }
+                  ]
+                },
+                "op": "padEnd",
+                "args": [
+                  {
+                    "type": "literal",
+                    "value": 4
+                  },
+                  {
+                    "type": "literal",
+                    "value": "9"
+                  }
+                ]
+              }
+            },
+            "op": "Utf8.parse",
+            "args": []
+          },
+          "target": "iv"
+        },
+        {
+          "operation": "encrypt",
+          "line": 165,
+          "context": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+          "output_variable": "encryptedPassword",
+          "input_expression": "password",
+          "input_derivation": {
+            "type": "source",
+            "value": "password"
+          },
+          "input_source_keys": [
+            "password"
+          ]
+        }
+      ]
+    },
+    {
+      "library": "Network",
+      "algorithm": "PayloadPacking",
+      "operation": "pack",
+      "function_name": "sendDataWithNonce",
+      "file": "easy_1_2_3.js",
+      "line": 198,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "pack",
+          "line": 198,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    nonce: nonce,\n    timestamp: timestamp,\n    signature: signature\n  })\n})",
+          "info": {
+            "type": "json",
+            "structure": {
+              "username": "username",
+              "password": "password",
+              "nonce": "nonce",
+              "timestamp": "timestamp",
+              "signature": "signature"
+            },
+            "value_derivations": {
+              "username": {
+                "type": "source",
+                "value": "username"
+              },
+              "password": {
+                "type": "source",
+                "value": "password"
+              },
+              "nonce": {
+                "type": "op",
+                "input": {
+                  "type": "op",
+                  "input": {
+                    "type": "call",
+                    "callee": "Math.random",
+                    "args": [],
+                    "expression": "Math.random()"
+                  },
+                  "op": "toString",
+                  "args": [
+                    {
+                      "type": "literal",
+                      "value": 36
+                    }
+                  ]
+                },
+                "op": "substring",
+                "args": [
+                  {
+                    "type": "literal",
+                    "value": 2
+                  }
+                ]
+              },
+              "timestamp": {
+                "type": "call",
+                "callee": "Math.floor",
+                "args": [
+                  "?"
+                ],
+                "expression": "Math.floor(Date.now() / 1000)"
+              },
+              "signature": {
+                "type": "op",
+                "input": {
+                  "type": "call",
+                  "callee": "CryptoJS.HmacSHA256",
+                  "args": [
+                    {
+                      "type": "binary_op",
+                      "op": "+",
+                      "left": {
+                        "type": "binary_op",
+                        "op": "+",
+                        "left": {
+                          "type": "binary_op",
+                          "op": "+",
+                          "left": {
+                            "type": "source",
+                            "value": "username"
+                          },
+                          "right": {
+                            "type": "source",
+                            "value": "password"
+                          }
+                        },
+                        "right": {
+                          "type": "op",
+                          "input": {
+                            "type": "op",
+                            "input": {
+                              "type": "call",
+                              "callee": "Math.random",
+                              "args": [],
+                              "expression": "Math.random()"
+                            },
+                            "op": "toString",
+                            "args": [
+                              {
+                                "type": "literal",
+                                "value": 36
+                              }
+                            ]
+                          },
+                          "op": "substring",
+                          "args": [
+                            {
+                              "type": "literal",
+                              "value": 2
+                            }
+                          ]
+                        }
+                      },
+                      "right": {
+                        "type": "call",
+                        "callee": "Math.floor",
+                        "args": [
+                          "?"
+                        ],
+                        "expression": "Math.floor(Date.now() / 1000)"
+                      }
+                    },
+                    {
+                      "type": "literal",
+                      "value": "be56e057f20f883e"
+                    }
+                  ],
+                  "expression": "CryptoJS.HmacSHA256(dataToSign, secretKey)"
+                },
+                "op": "toString",
+                "args": [
+                  "CryptoJS.enc.Hex"
+                ]
+              }
+            },
+            "field_sources": {
+              "username": {
+                "source_expression": "username",
+                "source_type": "Identifier",
+                "source_name": "username",
+                "derivation": {
+                  "type": "source",
+                  "value": "username"
+                }
+              },
+              "password": {
+                "source_expression": "password",
+                "source_type": "Identifier",
+                "source_name": "password",
+                "derivation": {
+                  "type": "source",
+                  "value": "password"
+                }
+              },
+              "nonce": {
+                "source_expression": "nonce",
+                "source_type": "Identifier",
+                "source_name": "nonce",
+                "derivation": {
+                  "type": "op",
+                  "input": {
+                    "type": "op",
+                    "input": {
+                      "type": "call",
+                      "callee": "Math.random",
+                      "args": [],
+                      "expression": "Math.random()"
+                    },
+                    "op": "toString",
+                    "args": [
+                      {
+                        "type": "literal",
+                        "value": 36
+                      }
+                    ]
+                  },
+                  "op": "substring",
+                  "args": [
+                    {
+                      "type": "literal",
+                      "value": 2
+                    }
+                  ]
+                }
+              },
+              "timestamp": {
+                "source_expression": "timestamp",
+                "source_type": "Identifier",
+                "source_name": "timestamp",
+                "derivation": {
+                  "type": "call",
+                  "callee": "Math.floor",
+                  "args": [
+                    "?"
+                  ],
+                  "expression": "Math.floor(Date.now() / 1000)"
+                }
+              },
+              "signature": {
+                "source_expression": "signature",
+                "source_type": "Identifier",
+                "source_name": "signature",
+                "derivation": {
+                  "type": "op",
+                  "input": {
+                    "type": "call",
+                    "callee": "CryptoJS.HmacSHA256",
+                    "args": [
+                      {
+                        "type": "binary_op",
+                        "op": "+",
+                        "left": {
+                          "type": "binary_op",
+                          "op": "+",
+                          "left": {
+                            "type": "binary_op",
+                            "op": "+",
+                            "left": {
+                              "type": "source",
+                              "value": "username"
+                            },
+                            "right": {
+                              "type": "source",
+                              "value": "password"
+                            }
+                          },
+                          "right": {
+                            "type": "op",
+                            "input": {
+                              "type": "op",
+                              "input": {
+                                "type": "call",
+                                "callee": "Math.random",
+                                "args": [],
+                                "expression": "Math.random()"
+                              },
+                              "op": "toString",
+                              "args": [
+                                {
+                                  "type": "literal",
+                                  "value": 36
+                                }
+                              ]
+                            },
+                            "op": "substring",
+                            "args": [
+                              {
+                                "type": "literal",
+                                "value": 2
+                              }
+                            ]
+                          }
+                        },
+                        "right": {
+                          "type": "call",
+                          "callee": "Math.floor",
+                          "args": [
+                            "?"
+                          ],
+                          "expression": "Math.floor(Date.now() / 1000)"
+                        }
+                      },
+                      {
+                        "type": "literal",
+                        "value": "be56e057f20f883e"
+                      }
+                    ],
+                    "expression": "CryptoJS.HmacSHA256(dataToSign, secretKey)"
+                  },
+                  "op": "toString",
+                  "args": [
+                    "CryptoJS.enc.Hex"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "library": "N/A",
+      "algorithm": "N/A",
+      "operation": "hardcoded_secret",
+      "function_name": "sendDataWithNonce",
+      "file": "easy_1_2_3.js",
+      "line": 195,
+      "weakness": "HARDCODED_KEY",
+      "details": [
+        {
+          "operation": "hardcoded_secret",
+          "line": 195,
+          "context": "secretKey = \"be56e...\""
+        }
+      ]
+    },
+    {
+      "library": "CryptoJS",
+      "algorithm": "HmacSHA256()",
+      "operation": "DataStructure,setkey,sign",
+      "function_name": "sendDataWithNonce",
+      "file": "easy_1_2_3.js",
+      "line": 195,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "setkey",
+          "line": 195,
+          "context": "Variable: secretKey (Resolved: \"be56e057f20f883e\")",
+          "resolved_value": "be56e057f20f883e"
+        },
+        {
+          "operation": "DataStructure",
+          "line": 196,
+          "context": "Inferred Payload Keys for 'dataToSign': [\"username\",\"password\"]",
+          "inferred_keys": [
+            "username",
+            "password"
+          ]
+        },
+        {
+          "operation": "sign",
+          "line": 197,
+          "context": "CryptoJS.HmacSHA256(dataToSign, secretKey).toString(CryptoJS.enc.Hex)",
+          "output_variable": "signature",
+          "input_expression": "dataToSign",
+          "input_derivation": {
+            "type": "binary_op",
+            "op": "+",
+            "left": {
+              "type": "binary_op",
+              "op": "+",
+              "left": {
+                "type": "binary_op",
+                "op": "+",
+                "left": {
+                  "type": "source",
+                  "value": "username"
+                },
+                "right": {
+                  "type": "source",
+                  "value": "password"
+                }
+              },
+              "right": {
+                "type": "op",
+                "input": {
+                  "type": "op",
+                  "input": {
+                    "type": "call",
+                    "callee": "Math.random",
+                    "args": [],
+                    "expression": "Math.random()"
+                  },
+                  "op": "toString",
+                  "args": [
+                    {
+                      "type": "literal",
+                      "value": 36
+                    }
+                  ]
+                },
+                "op": "substring",
+                "args": [
+                  {
+                    "type": "literal",
+                    "value": 2
+                  }
+                ]
+              }
+            },
+            "right": {
+              "type": "call",
+              "callee": "Math.floor",
+              "args": [
+                "?"
+              ],
+              "expression": "Math.floor(Date.now() / 1000)"
+            }
+          },
+          "input_source_keys": [
+            "username",
+            "password"
+          ],
+          "output_transform": "CryptoJS.HmacSHA256(dataToSign, secretKey).toString(CryptoJS.enc.Hex)"
+        }
+      ]
+    },
+    {
+      "library": "CryptoJS",
+      "algorithm": "HmacSHA256",
+      "operation": "DataStructure,setkey,sign",
+      "function_name": "sendDataWithNonce",
+      "file": "easy_1_2_3.js",
+      "line": 195,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "setkey",
+          "line": 195,
+          "context": "Variable: secretKey (Resolved: \"be56e057f20f883e\")",
+          "resolved_value": "be56e057f20f883e"
+        },
+        {
+          "operation": "DataStructure",
+          "line": 196,
+          "context": "Inferred Payload Keys for 'dataToSign': [\"username\",\"password\"]",
+          "inferred_keys": [
+            "username",
+            "password"
+          ]
+        },
+        {
+          "operation": "sign",
+          "line": 197,
+          "context": "CryptoJS.HmacSHA256(dataToSign, secretKey)",
+          "output_variable": "signature",
+          "input_expression": "dataToSign",
+          "input_derivation": {
+            "type": "binary_op",
+            "op": "+",
+            "left": {
+              "type": "binary_op",
+              "op": "+",
+              "left": {
+                "type": "binary_op",
+                "op": "+",
+                "left": {
+                  "type": "source",
+                  "value": "username"
+                },
+                "right": {
+                  "type": "source",
+                  "value": "password"
+                }
+              },
+              "right": {
+                "type": "op",
+                "input": {
+                  "type": "op",
+                  "input": {
+                    "type": "call",
+                    "callee": "Math.random",
+                    "args": [],
+                    "expression": "Math.random()"
+                  },
+                  "op": "toString",
+                  "args": [
+                    {
+                      "type": "literal",
+                      "value": 36
+                    }
+                  ]
+                },
+                "op": "substring",
+                "args": [
+                  {
+                    "type": "literal",
+                    "value": 2
+                  }
+                ]
+              }
+            },
+            "right": {
+              "type": "call",
+              "callee": "Math.floor",
+              "args": [
+                "?"
+              ],
+              "expression": "Math.floor(Date.now() / 1000)"
+            }
+          },
+          "input_source_keys": [
+            "username",
+            "password"
+          ]
+        }
+      ]
+    },
+    {
+      "library": "Network",
+      "algorithm": "PayloadPacking",
+      "operation": "pack",
+      "function_name": "sendDataWithNonceServer",
+      "file": "easy_1_2_3.js",
+      "line": 226,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "pack",
+          "line": 226,
+          "context": "fetch(`${url}/../get-signature.php`, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    timestamp: timestamp\n  })\n})",
+          "info": {
+            "type": "json",
+            "structure": {
+              "username": "username",
+              "password": "password",
+              "timestamp": "timestamp"
+            },
+            "value_derivations": {
+              "username": {
+                "type": "source",
+                "value": "username"
+              },
+              "password": {
+                "type": "source",
+                "value": "password"
+              },
+              "timestamp": {
+                "type": "call",
+                "callee": "Math.floor",
+                "args": [
+                  "?"
+                ],
+                "expression": "Math.floor(Date.now() / 1000)"
+              }
+            },
+            "field_sources": {
+              "username": {
+                "source_expression": "username",
+                "source_type": "Identifier",
+                "source_name": "username",
+                "derivation": {
+                  "type": "source",
+                  "value": "username"
+                }
+              },
+              "password": {
+                "source_expression": "password",
+                "source_type": "Identifier",
+                "source_name": "password",
+                "derivation": {
+                  "type": "source",
+                  "value": "password"
+                }
+              },
+              "timestamp": {
+                "source_expression": "timestamp",
+                "source_type": "Identifier",
+                "source_name": "timestamp",
+                "derivation": {
+                  "type": "call",
+                  "callee": "Math.floor",
+                  "args": [
+                    "?"
+                  ],
+                  "expression": "Math.floor(Date.now() / 1000)"
+                }
+              }
+            }
+          }
+        },
+        {
+          "operation": "pack",
+          "line": 250,
+          "context": "fetch(`${url}`, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    timestamp: timestamp,\n    signature: signature\n  })\n})",
+          "info": {
+            "type": "json",
+            "structure": {
+              "username": "username",
+              "password": "password",
+              "timestamp": "timestamp",
+              "signature": "signature"
+            },
+            "value_derivations": {
+              "username": {
+                "type": "source",
+                "value": "username"
+              },
+              "password": {
+                "type": "source",
+                "value": "password"
+              },
+              "timestamp": {
+                "type": "call",
+                "callee": "Math.floor",
+                "args": [
+                  "?"
+                ],
+                "expression": "Math.floor(Date.now() / 1000)"
+              }
+            },
+            "field_sources": {
+              "username": {
+                "source_expression": "username",
+                "source_type": "Identifier",
+                "source_name": "username",
+                "derivation": {
+                  "type": "source",
+                  "value": "username"
+                }
+              },
+              "password": {
+                "source_expression": "password",
+                "source_type": "Identifier",
+                "source_name": "password",
+                "derivation": {
+                  "type": "source",
+                  "value": "password"
+                }
+              },
+              "timestamp": {
+                "source_expression": "timestamp",
+                "source_type": "Identifier",
+                "source_name": "timestamp",
+                "derivation": {
+                  "type": "call",
+                  "callee": "Math.floor",
+                  "args": [
+                    "?"
+                  ],
+                  "expression": "Math.floor(Date.now() / 1000)"
+                }
+              },
+              "signature": {
+                "source_expression": "signature",
+                "source_type": "Identifier",
+                "source_name": "signature"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "library": "JSEncrypt",
+      "algorithm": "RSA",
+      "operation": "encrypt,init,setkey",
+      "function_name": "rsaEncrypt",
+      "file": "easy_1_2_3.js",
+      "line": 290,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "init",
+          "line": 290,
+          "context": "new JSEncrypt()"
+        },
+        {
+          "operation": "setkey",
+          "line": 291,
+          "context": "Variable: publicKey",
+          "resolved_value": null
+        },
+        {
+          "operation": "encrypt",
+          "line": 292,
+          "context": "jsEncrypt.encrypt(data.toString())",
+          "output_variable": "encrypted",
+          "input_expression": "data.toString()",
+          "input_derivation": {
+            "type": "call",
+            "callee": "data.toString",
+            "args": [],
+            "expression": "data.toString()"
+          }
+        }
+      ]
+    },
+    {
+      "library": "Network",
+      "algorithm": "PayloadPacking",
+      "operation": "pack",
+      "function_name": "sendLoginRequest",
+      "file": "easy_1_2_3.js",
+      "line": 316,
+      "weakness": null,
+      "details": [
+        {
+          "operation": "pack",
+          "line": 316,
+          "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json; charset=utf-8\"\n  },\n  body: JSON.stringify(dataToSend)\n})",
+          "info": {
+            "type": "json",
+            "structure": {
+              "username": "username",
+              "password": "password",
+              "random": "encryptedTimestamp"
+            },
+            "value_derivations": {
+              "username": {
+                "type": "source",
+                "value": "username"
+              },
+              "password": {
+                "type": "source",
+                "value": "password"
+              },
+              "encryptedTimestamp": {
+                "type": "call",
+                "callee": "rsaEncrypt",
+                "args": [
+                  {
+                    "type": "call",
+                    "callee": "Date.now",
+                    "args": [],
+                    "expression": "Date.now()"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRvA7giwinEkaTYllDYCkzujvi\nNH+up0XAKXQot8RixKGpB7nr8AdidEvuo+wVCxZwDK3hlcRGrrqt0Gxqwc11btlM\nDSj92Mr3xSaJcshZU8kfj325L8DRh9jpruphHBfh955ihvbednGAvOHOrz3Qy3Cb\nocDbsNeCwNpRxwjIdQIDAQAB\n-----END PUBLIC KEY-----"
+                  }
+                ],
+                "expression": "rsaEncrypt(timestamp, publicKey)"
+              }
+            },
+            "field_sources": {
+              "username": {
+                "source_expression": "username",
+                "source_type": "Identifier",
+                "source_name": "username",
+                "derivation": {
+                  "type": "source",
+                  "value": "username"
+                }
+              },
+              "password": {
+                "source_expression": "password",
+                "source_type": "Identifier",
+                "source_name": "password",
+                "derivation": {
+                  "type": "source",
+                  "value": "password"
+                }
+              },
+              "random": {
+                "source_expression": "encryptedTimestamp",
+                "source_type": "Identifier",
+                "source_name": "encryptedTimestamp",
+                "derivation": {
+                  "type": "call",
+                  "callee": "rsaEncrypt",
+                  "args": [
+                    {
+                      "type": "call",
+                      "callee": "Date.now",
+                      "args": [],
+                      "expression": "Date.now()"
+                    },
+                    {
+                      "type": "literal",
+                      "value": "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRvA7giwinEkaTYllDYCkzujvi\nNH+up0XAKXQot8RixKGpB7nr8AdidEvuo+wVCxZwDK3hlcRGrrqt0Gxqwc11btlM\nDSj92Mr3xSaJcshZU8kfj325L8DRh9jpruphHBfh955ihvbednGAvOHOrz3Qy3Cb\nocDbsNeCwNpRxwjIdQIDAQAB\n-----END PUBLIC KEY-----"
+                    }
+                  ],
+                  "expression": "rsaEncrypt(timestamp, publicKey)"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "endpoint_crypto_map": {
+    "http://encrypt-labs-main/encrypt/aes.php": {
+      "trigger_function": "sendDataAes",
+      "algorithms": [
+        "AES",
+        "PayloadPacking"
+      ],
+      "operations": [
+        {
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "operation": "pack",
+          "details": [
+            {
+              "operation": "pack",
+              "line": 19,
+              "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/x-www-form-urlencoded; charset=utf-8\"\n  },\n  body: params\n})",
+              "info": {
+                "type": "template",
+                "template": "encryptedData={{encrypted}}",
+                "insertions": [
+                  {
+                    "type": "template_insertion",
+                    "position": 0,
+                    "variable": "encrypted"
+                  }
+                ],
+                "field_sources": {
+                  "encrypted": {
+                    "source_name": "encrypted",
+                    "source_expression": "encodeURIComponent(encrypted)",
+                    "source_type": "CallExpression"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "library": "CryptoJS",
+          "algorithm": "AES",
+          "operation": "DataStructure,encrypt,setiv,setkey",
+          "details": [
+            {
+              "operation": "DataStructure",
+              "line": 10,
+              "context": "Inferred Payload Keys for 'jsonData': [\"username\",\"password\"]",
+              "inferred_keys": [
+                "username",
+                "password"
+              ]
+            },
+            {
+              "operation": "setkey",
+              "line": 11,
+              "context": "Variable: key (Resolved: \"1234567890123456\")",
+              "resolved_value": "1234567890123456"
+            },
+            {
+              "operation": "setiv",
+              "line": 12,
+              "context": "Variable: iv (Resolved: \"1234567890123456\")",
+              "resolved_value": "1234567890123456"
+            },
+            {
+              "operation": "encrypt",
+              "line": 13,
+              "context": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+              "output_variable": "encrypted",
+              "input_expression": "jsonData",
+              "input_derivation": {
+                "type": "op",
+                "input": {
+                  "type": "identifier",
+                  "name": "formData"
+                },
+                "op": "JSON.stringify",
+                "args": []
+              }
+            }
+          ]
+        }
+      ],
+      "trace_calls": [
+        "CryptoJS.AES.encrypt",
+        "CryptoJS.AES.encrypt().toString"
+      ]
+    },
+    "http://encrypt-labs-main/encrypt/aesserver.php": {
+      "trigger_function": "fetchAndSendDataAes",
+      "algorithms": [
+        "AES",
+        "PayloadPacking"
+      ],
+      "operations": [
+        {
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "operation": "pack",
+          "details": [
+            {
+              "operation": "pack",
+              "line": 142,
+              "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    encryptedData: encryptedData\n  })\n})",
+              "info": {
+                "type": "json",
+                "structure": {
+                  "encryptedData": "encryptedData"
+                },
+                "value_derivations": {
+                  "encryptedData": {
+                    "type": "op",
+                    "input": {
+                      "type": "call",
+                      "callee": "CryptoJS.AES.encrypt",
+                      "args": [
+                        {
+                          "type": "op",
+                          "input": {
+                            "type": "identifier",
+                            "name": "formData"
+                          },
+                          "op": "JSON.stringify",
+                          "args": []
+                        },
+                        {
+                          "type": "op",
+                          "input": null,
+                          "op": "Base64.parse",
+                          "args": []
+                        },
+                        {
+                          "iv": {
+                            "type": "op",
+                            "input": null,
+                            "op": "Base64.parse",
+                            "args": []
+                          },
+                          "mode": "CryptoJS.mode.CBC",
+                          "padding": "CryptoJS.pad.Pkcs7"
+                        }
+                      ],
+                      "expression": "CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                    },
+                    "op": "toString",
+                    "args": []
+                  }
+                },
+                "field_sources": {
+                  "encryptedData": {
+                    "source_expression": "encryptedData",
+                    "source_type": "Identifier",
+                    "source_name": "encryptedData",
+                    "derivation": {
+                      "type": "op",
+                      "input": {
+                        "type": "call",
+                        "callee": "CryptoJS.AES.encrypt",
+                        "args": [
+                          {
+                            "type": "op",
+                            "input": {
+                              "type": "identifier",
+                              "name": "formData"
+                            },
+                            "op": "JSON.stringify",
+                            "args": []
+                          },
+                          {
+                            "type": "op",
+                            "input": null,
+                            "op": "Base64.parse",
+                            "args": []
+                          },
+                          {
+                            "iv": {
+                              "type": "op",
+                              "input": null,
+                              "op": "Base64.parse",
+                              "args": []
+                            },
+                            "mode": "CryptoJS.mode.CBC",
+                            "padding": "CryptoJS.pad.Pkcs7"
+                          }
+                        ],
+                        "expression": "CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                      },
+                      "op": "toString",
+                      "args": []
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "library": "CryptoJS",
+          "algorithm": "AES",
+          "operation": "DataStructure,derive_iv,derive_key,encrypt",
+          "details": [
+            {
+              "operation": "derive_key",
+              "line": 121,
+              "context": "CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+              "derivation": {
+                "type": "op",
+                "input": null,
+                "op": "Base64.parse",
+                "args": []
+              },
+              "target": "key"
+            },
+            {
+              "operation": "derive_iv",
+              "line": 121,
+              "context": "CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+              "derivation": {
+                "type": "op",
+                "input": null,
+                "op": "Base64.parse",
+                "args": []
+              },
+              "target": "iv"
+            },
+            {
+              "operation": "DataStructure",
+              "line": 136,
+              "context": "Inferred Payload Keys for 'jsonData': [\"username\",\"password\"]",
+              "inferred_keys": [
+                "username",
+                "password"
+              ]
+            },
+            {
+              "operation": "encrypt",
+              "line": 137,
+              "context": "CryptoJS.AES.encrypt(jsonData, aesKey, {\n  iv: aesIv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+              "output_variable": "encryptedData",
+              "input_expression": "jsonData",
+              "input_derivation": {
+                "type": "op",
+                "input": {
+                  "type": "identifier",
+                  "name": "formData"
+                },
+                "op": "JSON.stringify",
+                "args": []
+              }
+            }
+          ]
+        }
+      ],
+      "trace_calls": [
+        "CryptoJS.AES.encrypt",
+        "CryptoJS.AES.encrypt().toString"
+      ]
+    },
+    "http://encrypt-labs-main/encrypt/rsa.php": {
+      "trigger_function": "sendEncryptedDataRSA",
+      "algorithms": [
+        "PayloadPacking",
+        "RSA"
+      ],
+      "operations": [
+        {
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "operation": "pack",
+          "details": [
+            {
+              "operation": "pack",
+              "line": 62,
+              "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/x-www-form-urlencoded\"\n  },\n  body: formData.toString()\n})",
+              "info": {
+                "type": "url_search_params",
+                "structure": {
+                  "data": "encryptedData"
+                },
+                "value_derivations": {
+                  "encryptedData": {
+                    "type": "call",
+                    "callee": "encryptor.encrypt",
+                    "args": [
+                      {
+                        "type": "op",
+                        "input": {
+                          "type": "identifier",
+                          "name": "dataPacket"
+                        },
+                        "op": "JSON.stringify",
+                        "args": []
+                      }
+                    ],
+                    "expression": "encryptor.encrypt(dataString)"
+                  }
+                },
+                "field_sources": {
+                  "data": {
+                    "source_expression": "encryptedData",
+                    "source_type": "Identifier",
+                    "source_name": "encryptedData",
+                    "derivation": {
+                      "type": "call",
+                      "callee": "encryptor.encrypt",
+                      "args": [
+                        {
+                          "type": "op",
+                          "input": {
+                            "type": "identifier",
+                            "name": "dataPacket"
+                          },
+                          "op": "JSON.stringify",
+                          "args": []
+                        }
+                      ],
+                      "expression": "encryptor.encrypt(dataString)"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "library": "JSEncrypt",
+          "algorithm": "RSA",
+          "operation": "DataStructure,encrypt,init,setkey",
+          "details": [
+            {
+              "operation": "DataStructure",
+              "line": 52,
+              "context": "Inferred Payload Keys: [\"username\",\"password\"]",
+              "inferred_keys": [
+                "username",
+                "password"
+              ]
+            },
+            {
+              "operation": "init",
+              "line": 53,
+              "context": "new JSEncrypt()"
+            },
+            {
+              "operation": "setkey",
+              "line": 54,
+              "context": "Variable: publicKey (Resolved)",
+              "resolved_value": "\n-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRvA7giwinEkaTYllDYCkzujvi\nNH+up0XAKXQot8RixKGpB7nr8AdidEvuo+wVCxZwDK3hlcRGrrqt0Gxqwc11btlM\nDSj92Mr3xSaJcshZU8kfj325L8DRh9jpruphHBfh955ihvbednGAvOHOrz3Qy3Cb\nocDbsNeCwNpRxwjIdQIDAQAB\n-----END PUBLIC KEY-----\n  "
+            },
+            {
+              "operation": "encrypt",
+              "line": 55,
+              "context": "encryptor.encrypt(dataString)",
+              "output_variable": "encryptedData",
+              "input_expression": "dataString",
+              "input_derivation": {
+                "type": "op",
+                "input": {
+                  "type": "identifier",
+                  "name": "dataPacket"
+                },
+                "op": "JSON.stringify",
+                "args": []
+              }
+            }
+          ]
+        }
+      ],
+      "trace_calls": [
+        "encryptor.encrypt",
+        "encryptor.setPublicKey"
+      ]
+    },
+    "http://encrypt-labs-main/encrypt/aesrsa.php": {
+      "trigger_function": "sendDataAesRsa",
+      "algorithms": [
+        "AES",
+        "PayloadPacking",
+        "RSA"
+      ],
+      "operations": [
+        {
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "operation": "pack",
+          "details": [
+            {
+              "operation": "pack",
+              "line": 100,
+              "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    encryptedData: encryptedData,\n    encryptedKey: encryptedKey,\n    encryptedIv: encryptedIv\n  })\n})",
+              "info": {
+                "type": "json",
+                "structure": {
+                  "encryptedData": "encryptedData",
+                  "encryptedKey": "encryptedKey",
+                  "encryptedIv": "encryptedIv"
+                },
+                "value_derivations": {
+                  "encryptedData": {
+                    "type": "op",
+                    "input": {
+                      "type": "call",
+                      "callee": "CryptoJS.AES.encrypt",
+                      "args": [
+                        {
+                          "type": "op",
+                          "input": {
+                            "type": "identifier",
+                            "name": "formData"
+                          },
+                          "op": "JSON.stringify",
+                          "args": []
+                        },
+                        {
+                          "type": "call",
+                          "callee": "CryptoJS.lib.WordArray.random",
+                          "args": [
+                            {
+                              "type": "literal",
+                              "value": 16
+                            }
+                          ],
+                          "expression": "CryptoJS.lib.WordArray.random(16)"
+                        },
+                        {
+                          "iv": {
+                            "type": "call",
+                            "callee": "CryptoJS.lib.WordArray.random",
+                            "args": [
+                              {
+                                "type": "literal",
+                                "value": 16
+                              }
+                            ],
+                            "expression": "CryptoJS.lib.WordArray.random(16)"
+                          },
+                          "mode": "CryptoJS.mode.CBC",
+                          "padding": "CryptoJS.pad.Pkcs7"
+                        }
+                      ],
+                      "expression": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                    },
+                    "op": "toString",
+                    "args": []
+                  },
+                  "encryptedKey": {
+                    "type": "call",
+                    "callee": "rsa.encrypt",
+                    "args": [
+                      {
+                        "type": "op",
+                        "input": {
+                          "type": "call",
+                          "callee": "CryptoJS.lib.WordArray.random",
+                          "args": [
+                            {
+                              "type": "literal",
+                              "value": 16
+                            }
+                          ],
+                          "expression": "CryptoJS.lib.WordArray.random(16)"
+                        },
+                        "op": "toString",
+                        "args": [
+                          "CryptoJS.enc.Base64"
+                        ]
+                      }
+                    ],
+                    "expression": "rsa.encrypt(key.toString(CryptoJS.enc.Base64))"
+                  },
+                  "encryptedIv": {
+                    "type": "call",
+                    "callee": "rsa.encrypt",
+                    "args": [
+                      {
+                        "type": "op",
+                        "input": {
+                          "type": "call",
+                          "callee": "CryptoJS.lib.WordArray.random",
+                          "args": [
+                            {
+                              "type": "literal",
+                              "value": 16
+                            }
+                          ],
+                          "expression": "CryptoJS.lib.WordArray.random(16)"
+                        },
+                        "op": "toString",
+                        "args": [
+                          "CryptoJS.enc.Base64"
+                        ]
+                      }
+                    ],
+                    "expression": "rsa.encrypt(iv.toString(CryptoJS.enc.Base64))"
+                  }
+                },
+                "field_sources": {
+                  "encryptedData": {
+                    "source_expression": "encryptedData",
+                    "source_type": "Identifier",
+                    "source_name": "encryptedData",
+                    "derivation": {
+                      "type": "op",
+                      "input": {
+                        "type": "call",
+                        "callee": "CryptoJS.AES.encrypt",
+                        "args": [
+                          {
+                            "type": "op",
+                            "input": {
+                              "type": "identifier",
+                              "name": "formData"
+                            },
+                            "op": "JSON.stringify",
+                            "args": []
+                          },
+                          {
+                            "type": "call",
+                            "callee": "CryptoJS.lib.WordArray.random",
+                            "args": [
+                              {
+                                "type": "literal",
+                                "value": 16
+                              }
+                            ],
+                            "expression": "CryptoJS.lib.WordArray.random(16)"
+                          },
+                          {
+                            "iv": {
+                              "type": "call",
+                              "callee": "CryptoJS.lib.WordArray.random",
+                              "args": [
+                                {
+                                  "type": "literal",
+                                  "value": 16
+                                }
+                              ],
+                              "expression": "CryptoJS.lib.WordArray.random(16)"
+                            },
+                            "mode": "CryptoJS.mode.CBC",
+                            "padding": "CryptoJS.pad.Pkcs7"
+                          }
+                        ],
+                        "expression": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                      },
+                      "op": "toString",
+                      "args": []
+                    }
+                  },
+                  "encryptedKey": {
+                    "source_expression": "encryptedKey",
+                    "source_type": "Identifier",
+                    "source_name": "encryptedKey",
+                    "derivation": {
+                      "type": "call",
+                      "callee": "rsa.encrypt",
+                      "args": [
+                        {
+                          "type": "op",
+                          "input": {
+                            "type": "call",
+                            "callee": "CryptoJS.lib.WordArray.random",
+                            "args": [
+                              {
+                                "type": "literal",
+                                "value": 16
+                              }
+                            ],
+                            "expression": "CryptoJS.lib.WordArray.random(16)"
+                          },
+                          "op": "toString",
+                          "args": [
+                            "CryptoJS.enc.Base64"
+                          ]
+                        }
+                      ],
+                      "expression": "rsa.encrypt(key.toString(CryptoJS.enc.Base64))"
+                    }
+                  },
+                  "encryptedIv": {
+                    "source_expression": "encryptedIv",
+                    "source_type": "Identifier",
+                    "source_name": "encryptedIv",
+                    "derivation": {
+                      "type": "call",
+                      "callee": "rsa.encrypt",
+                      "args": [
+                        {
+                          "type": "op",
+                          "input": {
+                            "type": "call",
+                            "callee": "CryptoJS.lib.WordArray.random",
+                            "args": [
+                              {
+                                "type": "literal",
+                                "value": 16
+                              }
+                            ],
+                            "expression": "CryptoJS.lib.WordArray.random(16)"
+                          },
+                          "op": "toString",
+                          "args": [
+                            "CryptoJS.enc.Base64"
+                          ]
+                        }
+                      ],
+                      "expression": "rsa.encrypt(iv.toString(CryptoJS.enc.Base64))"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "library": "CryptoJS",
+          "algorithm": "AES",
+          "operation": "DataStructure,derive_iv,derive_key,encrypt",
+          "details": [
+            {
+              "operation": "DataStructure",
+              "line": 83,
+              "context": "Inferred Payload Keys for 'jsonData': [\"username\",\"password\"]",
+              "inferred_keys": [
+                "username",
+                "password"
+              ]
+            },
+            {
+              "operation": "derive_key",
+              "line": 84,
+              "context": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+              "derivation": {
+                "type": "call",
+                "callee": "CryptoJS.lib.WordArray.random",
+                "args": [
+                  {
+                    "type": "literal",
+                    "value": 16
+                  }
+                ],
+                "expression": "CryptoJS.lib.WordArray.random(16)"
+              },
+              "target": "key"
+            },
+            {
+              "operation": "derive_iv",
+              "line": 85,
+              "context": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+              "derivation": {
+                "type": "call",
+                "callee": "CryptoJS.lib.WordArray.random",
+                "args": [
+                  {
+                    "type": "literal",
+                    "value": 16
+                  }
+                ],
+                "expression": "CryptoJS.lib.WordArray.random(16)"
+              },
+              "target": "iv"
+            },
+            {
+              "operation": "encrypt",
+              "line": 86,
+              "context": "CryptoJS.AES.encrypt(jsonData, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+              "output_variable": "encryptedData",
+              "input_expression": "jsonData",
+              "input_derivation": {
+                "type": "op",
+                "input": {
+                  "type": "identifier",
+                  "name": "formData"
+                },
+                "op": "JSON.stringify",
+                "args": []
+              }
+            }
+          ]
+        },
+        {
+          "library": "JSEncrypt",
+          "algorithm": "RSA",
+          "operation": "encrypt,init,setkey",
+          "details": [
+            {
+              "operation": "init",
+              "line": 91,
+              "context": "new JSEncrypt()"
+            },
+            {
+              "operation": "setkey",
+              "line": 92,
+              "context": "TemplateLiteral: \"-----BEGIN PUBLIC KE...\"",
+              "resolved_value": "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRvA7giwinEkaTYllDYCkzujvi\nNH+up0XAKXQot8RixKGpB7nr8AdidEvuo+wVCxZwDK3hlcRGrrqt0Gxqwc11btlM\nDSj92Mr3xSaJcshZU8kfj325L8DRh9jpruphHBfh955ihvbednGAvOHOrz3Qy3Cb\nocDbsNeCwNpRxwjIdQIDAQAB\n-----END PUBLIC KEY-----"
+            },
+            {
+              "operation": "encrypt",
+              "line": 98,
+              "context": "rsa.encrypt(key.toString(CryptoJS.enc.Base64))",
+              "output_variable": "encryptedKey",
+              "input_expression": "key.toString(CryptoJS.enc.Base64)",
+              "input_derivation": {
+                "type": "op",
+                "input": {
+                  "type": "call",
+                  "callee": "CryptoJS.lib.WordArray.random",
+                  "args": [
+                    {
+                      "type": "literal",
+                      "value": 16
+                    }
+                  ],
+                  "expression": "CryptoJS.lib.WordArray.random(16)"
+                },
+                "op": "toString",
+                "args": [
+                  "CryptoJS.enc.Base64"
+                ]
+              }
+            },
+            {
+              "operation": "encrypt",
+              "line": 99,
+              "context": "rsa.encrypt(iv.toString(CryptoJS.enc.Base64))",
+              "output_variable": "encryptedIv",
+              "input_expression": "iv.toString(CryptoJS.enc.Base64)",
+              "input_derivation": {
+                "type": "op",
+                "input": {
+                  "type": "call",
+                  "callee": "CryptoJS.lib.WordArray.random",
+                  "args": [
+                    {
+                      "type": "literal",
+                      "value": 16
+                    }
+                  ],
+                  "expression": "CryptoJS.lib.WordArray.random(16)"
+                },
+                "op": "toString",
+                "args": [
+                  "CryptoJS.enc.Base64"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "trace_calls": [
+        "CryptoJS.AES.encrypt",
+        "CryptoJS.AES.encrypt().toString",
+        "rsa.encrypt"
+      ]
+    },
+    "http://encrypt-labs-main/encrypt/des.php": {
+      "trigger_function": "encryptAndSendDataDES",
+      "algorithms": [
+        "DES",
+        "PayloadPacking"
+      ],
+      "operations": [
+        {
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "operation": "pack",
+          "details": [
+            {
+              "operation": "pack",
+              "line": 171,
+              "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: encryptedHex\n  })\n})",
+              "info": {
+                "type": "json",
+                "structure": {
+                  "username": "username",
+                  "password": "encryptedHex"
+                },
+                "value_derivations": {
+                  "username": {
+                    "type": "source",
+                    "value": "username"
+                  },
+                  "encryptedHex": {
+                    "type": "op",
+                    "input": {
+                      "type": "member_access",
+                      "input": {
+                        "type": "call",
+                        "callee": "CryptoJS.DES.encrypt",
+                        "args": [
+                          {
+                            "type": "source",
+                            "value": "password"
+                          },
+                          {
+                            "type": "op",
+                            "input": {
+                              "type": "op",
+                              "input": {
+                                "type": "op",
+                                "input": {
+                                  "type": "source",
+                                  "value": "username"
+                                },
+                                "op": "slice",
+                                "args": [
+                                  {
+                                    "type": "literal",
+                                    "value": 0
+                                  },
+                                  {
+                                    "type": "literal",
+                                    "value": 8
+                                  }
+                                ]
+                              },
+                              "op": "padEnd",
+                              "args": [
+                                {
+                                  "type": "literal",
+                                  "value": 8
+                                },
+                                {
+                                  "type": "literal",
+                                  "value": "6"
+                                }
+                              ]
+                            },
+                            "op": "Utf8.parse",
+                            "args": []
+                          },
+                          {
+                            "iv": {
+                              "type": "op",
+                              "input": {
+                                "type": "binary_op",
+                                "op": "+",
+                                "left": {
+                                  "type": "literal",
+                                  "value": "9999"
+                                },
+                                "right": {
+                                  "type": "op",
+                                  "input": {
+                                    "type": "op",
+                                    "input": {
+                                      "type": "source",
+                                      "value": "username"
+                                    },
+                                    "op": "slice",
+                                    "args": [
+                                      {
+                                        "type": "literal",
+                                        "value": 0
+                                      },
+                                      {
+                                        "type": "literal",
+                                        "value": 4
+                                      }
+                                    ]
+                                  },
+                                  "op": "padEnd",
+                                  "args": [
+                                    {
+                                      "type": "literal",
+                                      "value": 4
+                                    },
+                                    {
+                                      "type": "literal",
+                                      "value": "9"
+                                    }
+                                  ]
+                                }
+                              },
+                              "op": "Utf8.parse",
+                              "args": []
+                            },
+                            "mode": "CryptoJS.mode.CBC",
+                            "padding": "CryptoJS.pad.Pkcs7"
+                          }
+                        ],
+                        "expression": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                      },
+                      "property": "ciphertext"
+                    },
+                    "op": "toString",
+                    "args": [
+                      "CryptoJS.enc.Hex"
+                    ]
+                  }
+                },
+                "field_sources": {
+                  "username": {
+                    "source_expression": "username",
+                    "source_type": "Identifier",
+                    "source_name": "username",
+                    "derivation": {
+                      "type": "source",
+                      "value": "username"
+                    }
+                  },
+                  "password": {
+                    "source_expression": "encryptedHex",
+                    "source_type": "Identifier",
+                    "source_name": "encryptedHex",
+                    "derivation": {
+                      "type": "op",
+                      "input": {
+                        "type": "member_access",
+                        "input": {
+                          "type": "call",
+                          "callee": "CryptoJS.DES.encrypt",
+                          "args": [
+                            {
+                              "type": "source",
+                              "value": "password"
+                            },
+                            {
+                              "type": "op",
+                              "input": {
+                                "type": "op",
+                                "input": {
+                                  "type": "op",
+                                  "input": {
+                                    "type": "source",
+                                    "value": "username"
+                                  },
+                                  "op": "slice",
+                                  "args": [
+                                    {
+                                      "type": "literal",
+                                      "value": 0
+                                    },
+                                    {
+                                      "type": "literal",
+                                      "value": 8
+                                    }
+                                  ]
+                                },
+                                "op": "padEnd",
+                                "args": [
+                                  {
+                                    "type": "literal",
+                                    "value": 8
+                                  },
+                                  {
+                                    "type": "literal",
+                                    "value": "6"
+                                  }
+                                ]
+                              },
+                              "op": "Utf8.parse",
+                              "args": []
+                            },
+                            {
+                              "iv": {
+                                "type": "op",
+                                "input": {
+                                  "type": "binary_op",
+                                  "op": "+",
+                                  "left": {
+                                    "type": "literal",
+                                    "value": "9999"
+                                  },
+                                  "right": {
+                                    "type": "op",
+                                    "input": {
+                                      "type": "op",
+                                      "input": {
+                                        "type": "source",
+                                        "value": "username"
+                                      },
+                                      "op": "slice",
+                                      "args": [
+                                        {
+                                          "type": "literal",
+                                          "value": 0
+                                        },
+                                        {
+                                          "type": "literal",
+                                          "value": 4
+                                        }
+                                      ]
+                                    },
+                                    "op": "padEnd",
+                                    "args": [
+                                      {
+                                        "type": "literal",
+                                        "value": 4
+                                      },
+                                      {
+                                        "type": "literal",
+                                        "value": "9"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "op": "Utf8.parse",
+                                "args": []
+                              },
+                              "mode": "CryptoJS.mode.CBC",
+                              "padding": "CryptoJS.pad.Pkcs7"
+                            }
+                          ],
+                          "expression": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})"
+                        },
+                        "property": "ciphertext"
+                      },
+                      "op": "toString",
+                      "args": [
+                        "CryptoJS.enc.Hex"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "library": "CryptoJS",
+          "algorithm": "DES",
+          "operation": "DataStructure,derive_iv,derive_key,encrypt",
+          "details": [
+            {
+              "operation": "DataStructure",
+              "line": 162,
+              "context": "Inferred Payload Keys for 'password': [\"password\"]",
+              "inferred_keys": [
+                "password"
+              ]
+            },
+            {
+              "operation": "derive_key",
+              "line": 163,
+              "context": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+              "derivation": {
+                "type": "op",
+                "input": {
+                  "type": "op",
+                  "input": {
+                    "type": "op",
+                    "input": {
+                      "type": "source",
+                      "value": "username"
+                    },
+                    "op": "slice",
+                    "args": [
+                      {
+                        "type": "literal",
+                        "value": 0
+                      },
+                      {
+                        "type": "literal",
+                        "value": 8
+                      }
+                    ]
+                  },
+                  "op": "padEnd",
+                  "args": [
+                    {
+                      "type": "literal",
+                      "value": 8
+                    },
+                    {
+                      "type": "literal",
+                      "value": "6"
+                    }
+                  ]
+                },
+                "op": "Utf8.parse",
+                "args": []
+              },
+              "target": "key"
+            },
+            {
+              "operation": "derive_iv",
+              "line": 164,
+              "context": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+              "derivation": {
+                "type": "op",
+                "input": {
+                  "type": "binary_op",
+                  "op": "+",
+                  "left": {
+                    "type": "literal",
+                    "value": "9999"
+                  },
+                  "right": {
+                    "type": "op",
+                    "input": {
+                      "type": "op",
+                      "input": {
+                        "type": "source",
+                        "value": "username"
+                      },
+                      "op": "slice",
+                      "args": [
+                        {
+                          "type": "literal",
+                          "value": 0
+                        },
+                        {
+                          "type": "literal",
+                          "value": 4
+                        }
+                      ]
+                    },
+                    "op": "padEnd",
+                    "args": [
+                      {
+                        "type": "literal",
+                        "value": 4
+                      },
+                      {
+                        "type": "literal",
+                        "value": "9"
+                      }
+                    ]
+                  }
+                },
+                "op": "Utf8.parse",
+                "args": []
+              },
+              "target": "iv"
+            },
+            {
+              "operation": "encrypt",
+              "line": 165,
+              "context": "CryptoJS.DES.encrypt(password, key, {\n  iv: iv,\n  mode: CryptoJS.mode.CBC,\n  padding: CryptoJS.pad.Pkcs7\n})",
+              "output_variable": "encryptedPassword",
+              "input_expression": "password",
+              "input_derivation": {
+                "type": "source",
+                "value": "password"
+              },
+              "input_source_keys": [
+                "password"
+              ]
+            }
+          ]
+        }
+      ],
+      "trace_calls": [
+        "CryptoJS.DES.encrypt",
+        "encryptedPassword.ciphertext.toString"
+      ]
+    },
+    "http://encrypt-labs-main/encrypt/signdata.php": {
+      "trigger_function": "sendDataWithNonce",
+      "algorithms": [
+        "HmacSHA256",
+        "HmacSHA256()",
+        "PayloadPacking"
+      ],
+      "operations": [
+        {
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "operation": "pack",
+          "details": [
+            {
+              "operation": "pack",
+              "line": 198,
+              "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    nonce: nonce,\n    timestamp: timestamp,\n    signature: signature\n  })\n})",
+              "info": {
+                "type": "json",
+                "structure": {
+                  "username": "username",
+                  "password": "password",
+                  "nonce": "nonce",
+                  "timestamp": "timestamp",
+                  "signature": "signature"
+                },
+                "value_derivations": {
+                  "username": {
+                    "type": "source",
+                    "value": "username"
+                  },
+                  "password": {
+                    "type": "source",
+                    "value": "password"
+                  },
+                  "nonce": {
+                    "type": "op",
+                    "input": {
+                      "type": "op",
+                      "input": {
+                        "type": "call",
+                        "callee": "Math.random",
+                        "args": [],
+                        "expression": "Math.random()"
+                      },
+                      "op": "toString",
+                      "args": [
+                        {
+                          "type": "literal",
+                          "value": 36
+                        }
+                      ]
+                    },
+                    "op": "substring",
+                    "args": [
+                      {
+                        "type": "literal",
+                        "value": 2
+                      }
+                    ]
+                  },
+                  "timestamp": {
+                    "type": "call",
+                    "callee": "Math.floor",
+                    "args": [
+                      "?"
+                    ],
+                    "expression": "Math.floor(Date.now() / 1000)"
+                  },
+                  "signature": {
+                    "type": "op",
+                    "input": {
+                      "type": "call",
+                      "callee": "CryptoJS.HmacSHA256",
+                      "args": [
+                        {
+                          "type": "binary_op",
+                          "op": "+",
+                          "left": {
+                            "type": "binary_op",
+                            "op": "+",
+                            "left": {
+                              "type": "binary_op",
+                              "op": "+",
+                              "left": {
+                                "type": "source",
+                                "value": "username"
+                              },
+                              "right": {
+                                "type": "source",
+                                "value": "password"
+                              }
+                            },
+                            "right": {
+                              "type": "op",
+                              "input": {
+                                "type": "op",
+                                "input": {
+                                  "type": "call",
+                                  "callee": "Math.random",
+                                  "args": [],
+                                  "expression": "Math.random()"
+                                },
+                                "op": "toString",
+                                "args": [
+                                  {
+                                    "type": "literal",
+                                    "value": 36
+                                  }
+                                ]
+                              },
+                              "op": "substring",
+                              "args": [
+                                {
+                                  "type": "literal",
+                                  "value": 2
+                                }
+                              ]
+                            }
+                          },
+                          "right": {
+                            "type": "call",
+                            "callee": "Math.floor",
+                            "args": [
+                              "?"
+                            ],
+                            "expression": "Math.floor(Date.now() / 1000)"
+                          }
+                        },
+                        {
+                          "type": "literal",
+                          "value": "be56e057f20f883e"
+                        }
+                      ],
+                      "expression": "CryptoJS.HmacSHA256(dataToSign, secretKey)"
+                    },
+                    "op": "toString",
+                    "args": [
+                      "CryptoJS.enc.Hex"
+                    ]
+                  }
+                },
+                "field_sources": {
+                  "username": {
+                    "source_expression": "username",
+                    "source_type": "Identifier",
+                    "source_name": "username",
+                    "derivation": {
+                      "type": "source",
+                      "value": "username"
+                    }
+                  },
+                  "password": {
+                    "source_expression": "password",
+                    "source_type": "Identifier",
+                    "source_name": "password",
+                    "derivation": {
+                      "type": "source",
+                      "value": "password"
+                    }
+                  },
+                  "nonce": {
+                    "source_expression": "nonce",
+                    "source_type": "Identifier",
+                    "source_name": "nonce",
+                    "derivation": {
+                      "type": "op",
+                      "input": {
+                        "type": "op",
+                        "input": {
+                          "type": "call",
+                          "callee": "Math.random",
+                          "args": [],
+                          "expression": "Math.random()"
+                        },
+                        "op": "toString",
+                        "args": [
+                          {
+                            "type": "literal",
+                            "value": 36
+                          }
+                        ]
+                      },
+                      "op": "substring",
+                      "args": [
+                        {
+                          "type": "literal",
+                          "value": 2
+                        }
+                      ]
+                    }
+                  },
+                  "timestamp": {
+                    "source_expression": "timestamp",
+                    "source_type": "Identifier",
+                    "source_name": "timestamp",
+                    "derivation": {
+                      "type": "call",
+                      "callee": "Math.floor",
+                      "args": [
+                        "?"
+                      ],
+                      "expression": "Math.floor(Date.now() / 1000)"
+                    }
+                  },
+                  "signature": {
+                    "source_expression": "signature",
+                    "source_type": "Identifier",
+                    "source_name": "signature",
+                    "derivation": {
+                      "type": "op",
+                      "input": {
+                        "type": "call",
+                        "callee": "CryptoJS.HmacSHA256",
+                        "args": [
+                          {
+                            "type": "binary_op",
+                            "op": "+",
+                            "left": {
+                              "type": "binary_op",
+                              "op": "+",
+                              "left": {
+                                "type": "binary_op",
+                                "op": "+",
+                                "left": {
+                                  "type": "source",
+                                  "value": "username"
+                                },
+                                "right": {
+                                  "type": "source",
+                                  "value": "password"
+                                }
+                              },
+                              "right": {
+                                "type": "op",
+                                "input": {
+                                  "type": "op",
+                                  "input": {
+                                    "type": "call",
+                                    "callee": "Math.random",
+                                    "args": [],
+                                    "expression": "Math.random()"
+                                  },
+                                  "op": "toString",
+                                  "args": [
+                                    {
+                                      "type": "literal",
+                                      "value": 36
+                                    }
+                                  ]
+                                },
+                                "op": "substring",
+                                "args": [
+                                  {
+                                    "type": "literal",
+                                    "value": 2
+                                  }
+                                ]
+                              }
+                            },
+                            "right": {
+                              "type": "call",
+                              "callee": "Math.floor",
+                              "args": [
+                                "?"
+                              ],
+                              "expression": "Math.floor(Date.now() / 1000)"
+                            }
+                          },
+                          {
+                            "type": "literal",
+                            "value": "be56e057f20f883e"
+                          }
+                        ],
+                        "expression": "CryptoJS.HmacSHA256(dataToSign, secretKey)"
+                      },
+                      "op": "toString",
+                      "args": [
+                        "CryptoJS.enc.Hex"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "library": "N/A",
+          "algorithm": "N/A",
+          "operation": "hardcoded_secret",
+          "details": [
+            {
+              "operation": "hardcoded_secret",
+              "line": 195,
+              "context": "secretKey = \"be56e...\""
+            }
+          ]
+        },
+        {
+          "library": "CryptoJS",
+          "algorithm": "HmacSHA256()",
+          "operation": "DataStructure,setkey,sign",
+          "details": [
+            {
+              "operation": "setkey",
+              "line": 195,
+              "context": "Variable: secretKey (Resolved: \"be56e057f20f883e\")",
+              "resolved_value": "be56e057f20f883e"
+            },
+            {
+              "operation": "DataStructure",
+              "line": 196,
+              "context": "Inferred Payload Keys for 'dataToSign': [\"username\",\"password\"]",
+              "inferred_keys": [
+                "username",
+                "password"
+              ]
+            },
+            {
+              "operation": "sign",
+              "line": 197,
+              "context": "CryptoJS.HmacSHA256(dataToSign, secretKey).toString(CryptoJS.enc.Hex)",
+              "output_variable": "signature",
+              "input_expression": "dataToSign",
+              "input_derivation": {
+                "type": "binary_op",
+                "op": "+",
+                "left": {
+                  "type": "binary_op",
+                  "op": "+",
+                  "left": {
+                    "type": "binary_op",
+                    "op": "+",
+                    "left": {
+                      "type": "source",
+                      "value": "username"
+                    },
+                    "right": {
+                      "type": "source",
+                      "value": "password"
+                    }
+                  },
+                  "right": {
+                    "type": "op",
+                    "input": {
+                      "type": "op",
+                      "input": {
+                        "type": "call",
+                        "callee": "Math.random",
+                        "args": [],
+                        "expression": "Math.random()"
+                      },
+                      "op": "toString",
+                      "args": [
+                        {
+                          "type": "literal",
+                          "value": 36
+                        }
+                      ]
+                    },
+                    "op": "substring",
+                    "args": [
+                      {
+                        "type": "literal",
+                        "value": 2
+                      }
+                    ]
+                  }
+                },
+                "right": {
+                  "type": "call",
+                  "callee": "Math.floor",
+                  "args": [
+                    "?"
+                  ],
+                  "expression": "Math.floor(Date.now() / 1000)"
+                }
+              },
+              "input_source_keys": [
+                "username",
+                "password"
+              ],
+              "output_transform": "CryptoJS.HmacSHA256(dataToSign, secretKey).toString(CryptoJS.enc.Hex)"
+            }
+          ]
+        },
+        {
+          "library": "CryptoJS",
+          "algorithm": "HmacSHA256",
+          "operation": "DataStructure,setkey,sign",
+          "details": [
+            {
+              "operation": "setkey",
+              "line": 195,
+              "context": "Variable: secretKey (Resolved: \"be56e057f20f883e\")",
+              "resolved_value": "be56e057f20f883e"
+            },
+            {
+              "operation": "DataStructure",
+              "line": 196,
+              "context": "Inferred Payload Keys for 'dataToSign': [\"username\",\"password\"]",
+              "inferred_keys": [
+                "username",
+                "password"
+              ]
+            },
+            {
+              "operation": "sign",
+              "line": 197,
+              "context": "CryptoJS.HmacSHA256(dataToSign, secretKey)",
+              "output_variable": "signature",
+              "input_expression": "dataToSign",
+              "input_derivation": {
+                "type": "binary_op",
+                "op": "+",
+                "left": {
+                  "type": "binary_op",
+                  "op": "+",
+                  "left": {
+                    "type": "binary_op",
+                    "op": "+",
+                    "left": {
+                      "type": "source",
+                      "value": "username"
+                    },
+                    "right": {
+                      "type": "source",
+                      "value": "password"
+                    }
+                  },
+                  "right": {
+                    "type": "op",
+                    "input": {
+                      "type": "op",
+                      "input": {
+                        "type": "call",
+                        "callee": "Math.random",
+                        "args": [],
+                        "expression": "Math.random()"
+                      },
+                      "op": "toString",
+                      "args": [
+                        {
+                          "type": "literal",
+                          "value": 36
+                        }
+                      ]
+                    },
+                    "op": "substring",
+                    "args": [
+                      {
+                        "type": "literal",
+                        "value": 2
+                      }
+                    ]
+                  }
+                },
+                "right": {
+                  "type": "call",
+                  "callee": "Math.floor",
+                  "args": [
+                    "?"
+                  ],
+                  "expression": "Math.floor(Date.now() / 1000)"
+                }
+              },
+              "input_source_keys": [
+                "username",
+                "password"
+              ]
+            }
+          ]
+        }
+      ],
+      "trace_calls": []
+    },
+    "http://encrypt-labs-main/encrypt/signdataserver.php": {
+      "trigger_function": "sendDataWithNonceServer",
+      "algorithms": [
+        "PayloadPacking"
+      ],
+      "operations": [
+        {
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "operation": "pack",
+          "details": [
+            {
+              "operation": "pack",
+              "line": 226,
+              "context": "fetch(`${url}/../get-signature.php`, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    timestamp: timestamp\n  })\n})",
+              "info": {
+                "type": "json",
+                "structure": {
+                  "username": "username",
+                  "password": "password",
+                  "timestamp": "timestamp"
+                },
+                "value_derivations": {
+                  "username": {
+                    "type": "source",
+                    "value": "username"
+                  },
+                  "password": {
+                    "type": "source",
+                    "value": "password"
+                  },
+                  "timestamp": {
+                    "type": "call",
+                    "callee": "Math.floor",
+                    "args": [
+                      "?"
+                    ],
+                    "expression": "Math.floor(Date.now() / 1000)"
+                  }
+                },
+                "field_sources": {
+                  "username": {
+                    "source_expression": "username",
+                    "source_type": "Identifier",
+                    "source_name": "username",
+                    "derivation": {
+                      "type": "source",
+                      "value": "username"
+                    }
+                  },
+                  "password": {
+                    "source_expression": "password",
+                    "source_type": "Identifier",
+                    "source_name": "password",
+                    "derivation": {
+                      "type": "source",
+                      "value": "password"
+                    }
+                  },
+                  "timestamp": {
+                    "source_expression": "timestamp",
+                    "source_type": "Identifier",
+                    "source_name": "timestamp",
+                    "derivation": {
+                      "type": "call",
+                      "callee": "Math.floor",
+                      "args": [
+                        "?"
+                      ],
+                      "expression": "Math.floor(Date.now() / 1000)"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "operation": "pack",
+              "line": 250,
+              "context": "fetch(`${url}`, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    username: username,\n    password: password,\n    timestamp: timestamp,\n    signature: signature\n  })\n})",
+              "info": {
+                "type": "json",
+                "structure": {
+                  "username": "username",
+                  "password": "password",
+                  "timestamp": "timestamp",
+                  "signature": "signature"
+                },
+                "value_derivations": {
+                  "username": {
+                    "type": "source",
+                    "value": "username"
+                  },
+                  "password": {
+                    "type": "source",
+                    "value": "password"
+                  },
+                  "timestamp": {
+                    "type": "call",
+                    "callee": "Math.floor",
+                    "args": [
+                      "?"
+                    ],
+                    "expression": "Math.floor(Date.now() / 1000)"
+                  }
+                },
+                "field_sources": {
+                  "username": {
+                    "source_expression": "username",
+                    "source_type": "Identifier",
+                    "source_name": "username",
+                    "derivation": {
+                      "type": "source",
+                      "value": "username"
+                    }
+                  },
+                  "password": {
+                    "source_expression": "password",
+                    "source_type": "Identifier",
+                    "source_name": "password",
+                    "derivation": {
+                      "type": "source",
+                      "value": "password"
+                    }
+                  },
+                  "timestamp": {
+                    "source_expression": "timestamp",
+                    "source_type": "Identifier",
+                    "source_name": "timestamp",
+                    "derivation": {
+                      "type": "call",
+                      "callee": "Math.floor",
+                      "args": [
+                        "?"
+                      ],
+                      "expression": "Math.floor(Date.now() / 1000)"
+                    }
+                  },
+                  "signature": {
+                    "source_expression": "signature",
+                    "source_type": "Identifier",
+                    "source_name": "signature"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "trace_calls": [
+        "signResponse.json"
+      ]
+    },
+    "http://encrypt-labs-main/encrypt/norepeater.php": {
+      "trigger_function": "sendLoginRequest",
+      "algorithms": [
+        "PayloadPacking"
+      ],
+      "operations": [
+        {
+          "library": "Network",
+          "algorithm": "PayloadPacking",
+          "operation": "pack",
+          "details": [
+            {
+              "operation": "pack",
+              "line": 316,
+              "context": "fetch(url, {\n  method: \"POST\",\n  headers: {\n    \"Content-Type\": \"application/json; charset=utf-8\"\n  },\n  body: JSON.stringify(dataToSend)\n})",
+              "info": {
+                "type": "json",
+                "structure": {
+                  "username": "username",
+                  "password": "password",
+                  "random": "encryptedTimestamp"
+                },
+                "value_derivations": {
+                  "username": {
+                    "type": "source",
+                    "value": "username"
+                  },
+                  "password": {
+                    "type": "source",
+                    "value": "password"
+                  },
+                  "encryptedTimestamp": {
+                    "type": "call",
+                    "callee": "rsaEncrypt",
+                    "args": [
+                      {
+                        "type": "call",
+                        "callee": "Date.now",
+                        "args": [],
+                        "expression": "Date.now()"
+                      },
+                      {
+                        "type": "literal",
+                        "value": "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRvA7giwinEkaTYllDYCkzujvi\nNH+up0XAKXQot8RixKGpB7nr8AdidEvuo+wVCxZwDK3hlcRGrrqt0Gxqwc11btlM\nDSj92Mr3xSaJcshZU8kfj325L8DRh9jpruphHBfh955ihvbednGAvOHOrz3Qy3Cb\nocDbsNeCwNpRxwjIdQIDAQAB\n-----END PUBLIC KEY-----"
+                      }
+                    ],
+                    "expression": "rsaEncrypt(timestamp, publicKey)"
+                  }
+                },
+                "field_sources": {
+                  "username": {
+                    "source_expression": "username",
+                    "source_type": "Identifier",
+                    "source_name": "username",
+                    "derivation": {
+                      "type": "source",
+                      "value": "username"
+                    }
+                  },
+                  "password": {
+                    "source_expression": "password",
+                    "source_type": "Identifier",
+                    "source_name": "password",
+                    "derivation": {
+                      "type": "source",
+                      "value": "password"
+                    }
+                  },
+                  "random": {
+                    "source_expression": "encryptedTimestamp",
+                    "source_type": "Identifier",
+                    "source_name": "encryptedTimestamp",
+                    "derivation": {
+                      "type": "call",
+                      "callee": "rsaEncrypt",
+                      "args": [
+                        {
+                          "type": "call",
+                          "callee": "Date.now",
+                          "args": [],
+                          "expression": "Date.now()"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRvA7giwinEkaTYllDYCkzujvi\nNH+up0XAKXQot8RixKGpB7nr8AdidEvuo+wVCxZwDK3hlcRGrrqt0Gxqwc11btlM\nDSj92Mr3xSaJcshZU8kfj325L8DRh9jpruphHBfh955ihvbednGAvOHOrz3Qy3Cb\nocDbsNeCwNpRxwjIdQIDAQAB\n-----END PUBLIC KEY-----"
+                        }
+                      ],
+                      "expression": "rsaEncrypt(timestamp, publicKey)"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "trace_calls": []
+    }
+  },
+  "security_findings": [
+    {
+      "type": "WEAK_ALGORITHM",
+      "severity": "MEDIUM",
+      "algorithm": "DES",
+      "file": "easy_1_2_3.js",
+      "line": 162,
+      "description": "使用了弱加密算法 DES"
+    },
+    {
+      "type": "HARDCODED_KEY",
+      "severity": "HIGH",
+      "file": "easy_1_2_3.js",
+      "line": 195,
+      "context": "secretKey = \"be56e...\"",
+      "description": "检测到 HARDCODED_KEY 在 easy_1_2_3.js:195"
+    }
+  ]
+}
