@@ -57,13 +57,41 @@ def normalize_packing_info(packing_info):
     field_sources = normalized.get("field_sources", {}) or {}
     value_derivations = dict(normalized.get("value_derivations", {}) or {})
 
+    def infer_simple_derivation(source_name, source_expression):
+        if not isinstance(source_name, str):
+            return None
+        source_name = source_name.strip()
+        if not source_name:
+            return None
+        if source_name in ["username", "password", "nonce", "timestamp", "signature", "random", "data", "encryptedData"]:
+            return {"type": "source", "value": source_name}
+        if isinstance(source_expression, str):
+            expr = source_expression.lower()
+            if "date.now" in expr or "timestamp" in expr:
+                return {"type": "identifier", "name": "timestamp"}
+            if "math.random" in expr or "random" in expr:
+                return {"type": "identifier", "name": "random"}
+        return None
+
     for field_name, source_info in field_sources.items():
         if not isinstance(source_info, dict):
             continue
         source_name = source_info.get("source_name")
         derivation = source_info.get("derivation")
+
+        # source_name 缺失时尝试从 structure 回填
+        if not source_name and isinstance(structure, dict) and field_name in structure:
+            source_name = structure[field_name]
+            source_info["source_name"] = source_name
+
         if derivation and isinstance(source_name, str) and source_name not in value_derivations:
             value_derivations[source_name] = derivation
+
+        # 兜底：缺 derivation 时根据 source_name/source_expression 生成最小可用映射
+        if isinstance(source_name, str) and source_name not in value_derivations:
+            fallback_derivation = infer_simple_derivation(source_name, source_info.get("source_expression"))
+            if fallback_derivation:
+                value_derivations[source_name] = fallback_derivation
 
     if not field_sources and isinstance(structure, dict):
         generated_sources = {}
@@ -74,6 +102,17 @@ def normalize_packing_info(packing_info):
                 "source_type": "legacy"
             }
         field_sources = generated_sources
+
+    # 再次遍历 structure，确保 value_derivations 至少具备常见 source 的最小映射
+    if isinstance(structure, dict):
+        for _, source_name in structure.items():
+            if not isinstance(source_name, str):
+                continue
+            if source_name in value_derivations:
+                continue
+            fallback_derivation = infer_simple_derivation(source_name, str(source_name))
+            if fallback_derivation:
+                value_derivations[source_name] = fallback_derivation
 
     normalized["field_sources"] = field_sources
     normalized["value_derivations"] = value_derivations

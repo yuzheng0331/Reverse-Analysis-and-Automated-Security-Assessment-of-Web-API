@@ -35,6 +35,9 @@ profiles:
     baseline_gap_penalty:
       per_gap: 3.0
       max_total: 15.0
+    layer_score_weights:
+      protocol: 0.5
+      business: 0.5
   crypto_focus:
     description: 更强调密码学设计缺陷与协议参数篡改风险，适合偏安全研究展示。
     base_score: 100.0
@@ -69,6 +72,9 @@ profiles:
     baseline_gap_penalty:
       per_gap: 3.5
       max_total: 18.0
+    layer_score_weights:
+      protocol: 0.7
+      business: 0.3
   paper_v1:
     description: 论文展示版评分模型，平衡密码学缺陷、场景执行质量与结构化基线完整性。
     base_score: 100.0
@@ -103,4 +109,7 @@ profiles:
     baseline_gap_penalty:
       per_gap: 2.5
       max_total: 12.0
+    layer_score_weights:
+      protocol: 0.55
+      business: 0.45
 

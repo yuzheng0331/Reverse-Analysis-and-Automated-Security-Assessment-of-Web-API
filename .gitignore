@@ -86,10 +86,21 @@ report/
 baseline_samples/
 
 # -----------------------------------------------------------------------------
+# Negated Rules for Tracking Specific Files
+# -----------------------------------------------------------------------------
+baseline_samples/README.md
+baseline_samples/说明.md
+assessment_results/README.md
+assessment_results/说明.md
+collect/static_analysis/README.md
+collect/static_analysis/说明.md
+report/README.md
+report/说明.md
+
+# -----------------------------------------------------------------------------
 # Sensitive Files
 # -----------------------------------------------------------------------------
 # Never commit actual credentials or secrets
-.env
 *.pem
 *.key
 secrets.yaml
@@ -133,3 +144,21 @@ dmypy.json
 # -----------------------------------------------------------------------------
 test-results/
 playwright-report/
+
+# -----------------------------------------------------------------------------
+# Runtime / Temp / Debug Artifacts
+# -----------------------------------------------------------------------------
+runtime/*.log
+runtime/*debug*.txt
+runtime/*marker*.txt
+runtime/*test*.txt
+runtime/*test*.json
+runtime/*smoke*.json
+runtime/*metrics*.txt
+runtime/__pycache__/
+
+# Temporary report variants
+report/*_new.html
+report/*_new.json
+report/*_new.md
+

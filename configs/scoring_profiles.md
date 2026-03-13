@@ -216,6 +216,28 @@
 
 ---
 
+## 6.1 分层评分字段
+
+### `layer_score_weights`
+- 类型：对象
+- 作用：定义双分制评分中“协议层”和“业务层”的权重。
+
+包含字段：
+- `protocol`：协议层权重
+- `business`：业务层权重
+
+说明：
+- 评估引擎会同时输出：
+  - `overall_score`（总分）
+  - `protocol_score`（协议层风险分）
+  - `business_score`（业务层风险分）
+- `layer_score_weights` 用于将基线缺口惩罚按比例分摊到协议层与业务层，便于答辩时解释“分数低是协议问题还是业务校验问题”。
+
+示例：
+- `protocol: 0.7, business: 0.3` 表示更强调协议层风险。
+
+---
+
 ## 7. 当前内置 profile 的设计思路
 
 ### `default`

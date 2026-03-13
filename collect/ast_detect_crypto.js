@@ -186,6 +186,61 @@ function enrichDetailWithInputMetadata(detailTarget, basePath, argPath) {
     }
 }
 
+function deriveFromValueNode(valueNode) {
+    if (!valueNode) return null;
+
+    // document.getElementById('username').value / querySelector(...).value
+    if (t.isMemberExpression(valueNode)) {
+        const propName = valueNode.property && (valueNode.property.name || (t.isStringLiteral(valueNode.property) ? valueNode.property.value : null));
+        if (['value', 'checked', 'innerHTML', 'innerText'].includes(propName) && t.isCallExpression(valueNode.object)) {
+            const callee = resolveMemberExpression(valueNode.object.callee);
+            if (callee.includes('getElementById') || callee.includes('querySelector')) {
+                const arg0 = valueNode.object.arguments && valueNode.object.arguments.length > 0 ? valueNode.object.arguments[0] : null;
+                const resolved = resolveConstantFromNode(arg0, 0);
+                if (resolved && resolved.value) {
+                    return { type: 'source', value: resolved.value };
+                }
+            }
+        }
+    }
+
+    // Date.now()/Math.random()/Math.floor(...)
+    if (t.isCallExpression(valueNode)) {
+        const callee = resolveMemberExpression(valueNode.callee);
+        if (callee === 'Date.now') {
+            return { type: 'identifier', name: 'timestamp' };
+        }
+        if (callee === 'Math.random') {
+            return { type: 'identifier', name: 'random' };
+        }
+        if (callee === 'Math.floor' && valueNode.arguments && valueNode.arguments.length > 0) {
+            const firstArg = valueNode.arguments[0];
+            if (t.isBinaryExpression(firstArg) || t.isCallExpression(firstArg) || t.isMemberExpression(firstArg)) {
+                const inner = deriveFromValueNode(firstArg);
+                if (inner) {
+                    return { type: 'op', input: inner, op: 'Math.floor', args: [] };
+                }
+            }
+        }
+    }
+
+    // 字符串拼接
+    if (t.isBinaryExpression(valueNode) && valueNode.operator === '+') {
+        const left = deriveFromValueNode(valueNode.left) || (resolveConstantFromNode(valueNode.left, 0) ? { type: 'literal', value: valueNode.left.value } : null);
+        const right = deriveFromValueNode(valueNode.right) || (resolveConstantFromNode(valueNode.right, 0) ? { type: 'literal', value: valueNode.right.value } : null);
+        if (left || right) {
+            return {
+                type: 'binary_op',
+                op: '+',
+                left: left || { type: 'unknown' },
+                right: right || { type: 'unknown' }
+            };
+        }
+    }
+
+    return null;
+}
+
 function buildPackingFieldSource(path, valueNode, analysisPath = path) {
     const sourceInfo = {
         source_expression: generate(valueNode).code,
@@ -206,6 +261,35 @@ function buildPackingFieldSource(path, valueNode, analysisPath = path) {
         sourceInfo.source_name = constantVal.value;
         sourceInfo.literal_value = constantVal.value;
         sourceInfo.source_type = 'literal';
+        return sourceInfo;
+    }
+
+    // 先从 valueNode 本身推断（避免误用无关 NodePath）
+    let directDerivation = deriveFromValueNode(valueNode);
+
+    // 如未命中，再尝试从 analysisPath 推断（仅在两者确实同源时使用）
+    if (!directDerivation && analysisPath && analysisPath.node === valueNode) {
+        directDerivation = analyzeDerivationExpression(analysisPath);
+    }
+
+    // 最后兜底：在调用点 path 上尝试变量追踪
+    if (!directDerivation && t.isIdentifier(valueNode)) {
+        directDerivation = traceVariableDerivation(path, valueNode.name) || null;
+    }
+
+    if (directDerivation) {
+        sourceInfo.derivation = directDerivation;
+        const sourceKeys = extractSourcesFromDerivation(directDerivation);
+        if (sourceKeys && sourceKeys.length > 0) {
+            sourceInfo.source_name = sourceKeys[0];
+            sourceInfo.source_keys = sourceKeys;
+            return sourceInfo;
+        }
+    }
+
+    // 对于复杂表达式，至少保留表达式文本作为可追踪 source_name
+    if (valueNode.type === 'MemberExpression' || valueNode.type === 'CallExpression' || valueNode.type === 'BinaryExpression') {
+        sourceInfo.source_name = sourceInfo.source_expression;
         return sourceInfo;
     }
 

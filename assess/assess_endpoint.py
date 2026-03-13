@@ -13,6 +13,7 @@ import binascii
 import copy
 import json
 import random
+import re
 import sys
 import time
 import urllib.parse
@@ -24,7 +25,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress
 from rich import box
@@ -88,6 +88,30 @@ FINDING_LIBRARY = {
     },
 }
 
+TAMPER_FIELD_ALIASES = {
+    "timestamp": ["ts", "time", "signTimestamp", "requestTime"],
+    "signature": ["sign", "sig", "token", "mac"],
+    "nonce": ["nonceStr", "rand", "random"],
+    "encryptedData": ["encrypted", "ciphertext", "cipher", "data"],
+    "data": ["payload", "encryptedData", "ciphertext"],
+    "random": ["rand", "nonce", "nonceStr"],
+}
+
+SCENARIO_LAYER_MAP = {
+    "baseline_replay": "protocol",
+    "crypto_protocol_tamper": "protocol",
+    "plaintext_mutation": "business",
+    "boundary_anomaly": "business",
+    "payload_structure_variation": "business",
+    "auth_context_variation": "business",
+}
+
+FINDING_LAYER_MAP = {
+    "cryptography": "protocol",
+    "configuration": "protocol",
+    "authentication": "business",
+}
+
 
 def first_payload_key(payload: dict[str, Any], preferred: list[str]) -> Optional[str]:
     for key in preferred:
@@ -113,6 +137,51 @@ def decode_hex_or_utf8(value: Any) -> bytes:
         except (binascii.Error, ValueError):
             pass
     return value.encode("utf-8")
+
+
+def classify_response_mode(remote_result: dict[str, Any]) -> str:
+    """将响应语义归一化为可聚类模式。"""
+    if not isinstance(remote_result, dict):
+        return "NOT_ATTEMPTED"
+    if not remote_result.get("attempted"):
+        return "NOT_ATTEMPTED"
+    if remote_result.get("error"):
+        return "TRANSPORT_ERROR"
+
+    status_code = remote_result.get("status_code")
+    body_preview = str(remote_result.get("body_preview") or "")
+    body_lc = body_preview.lower()
+
+    if isinstance(status_code, int) and status_code >= 500:
+        return "SERVER_5XX"
+    if "\"success\":true" in body_lc:
+        return "APP_SUCCESS"
+    if "invalid input" in body_lc or "invalid username" in body_lc:
+        return "APP_INVALID_INPUT"
+    if "no data" in body_lc or "missing" in body_lc:
+        return "APP_MISSING_DATA"
+    if "decrypt" in body_lc or "解密失败" in body_preview:
+        return "APP_DECRYPT_FAIL"
+    if isinstance(status_code, int) and status_code >= 400:
+        return "HTTP_4XX"
+    if isinstance(status_code, int) and status_code >= 200:
+        return "HTTP_OK_OTHER"
+    return "UNKNOWN"
+
+
+def summarize_response_modes(scenario_results: list[dict[str, Any]]) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    for scenario in scenario_results:
+        remote = scenario.get("remote_result", {}) or {}
+        mode = str(remote.get("response_mode") or classify_response_mode(remote))
+        counts[mode] = counts.get(mode, 0) + 1
+    top_mode = None
+    if counts:
+        top_mode = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+    return {
+        "response_mode_counts": counts,
+        "top_failure_mode": top_mode,
+    }
 
 
 class LocalFlowExecutor:
@@ -502,6 +571,7 @@ class BaselineAssessmentEngine:
             "scenario_status_penalties": copy.deepcopy(self.scoring_profile.get("scenario_status_penalties", {})),
             "scenario_category_multipliers": copy.deepcopy(self.scoring_profile.get("scenario_category_multipliers", {})),
             "baseline_gap_penalty": copy.deepcopy(self.scoring_profile.get("baseline_gap_penalty", {})),
+            "layer_score_weights": copy.deepcopy(self.scoring_profile.get("layer_score_weights", {"protocol": 0.5, "business": 0.5})),
         }
 
     def _lookup_weight(self, mapping: dict[str, Any], key: str, default: float = 1.0) -> float:
@@ -545,15 +615,42 @@ class BaselineAssessmentEngine:
                 gap_summary.extend(assessment.get("baseline_gaps", []))
                 progress.advance(task)
         overall_score = sum(item.get("security_score", 0.0) for item in assessments) / len(assessments) if assessments else 0.0
+        protocol_avg = sum(float(item.get("protocol_score", 0.0)) for item in assessments) / len(assessments) if assessments else 0.0
+        business_avg = sum(float(item.get("business_score", 0.0)) for item in assessments) / len(assessments) if assessments else 0.0
+        remote_summary = self._summarize_remote_execution([
+            scenario
+            for assessment in assessments
+            for scenario in (assessment.get("scenario_results", []) or [])
+        ])
+        global_error_clusters = self._summarize_error_clusters(assessments)
         return {
             "report_id": f"ASM-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
             "generated_at": utc_now(),
             "source": {"baseline_file": str(baseline_path), "static_analysis_file": str(static_analysis_path or "") if static_analysis_path else self._infer_static_path_from_baselines(baseline_data), "send_requests": self.send_requests, "timeout_seconds": self.timeout, "scoring_profile": self.scoring_profile_name, "scoring_config_file": str(self.scoring_config_path)},
             "scoring": self._current_scoring_summary(),
-            "summary": {"baseline_entries_total": len(baseline_data), "verified_entries_total": len(verified_entries), "assessed_endpoints": len(assessments), "skipped_entries": len(skipped_entries), "scenario_results_total": scenario_total, "findings_total": findings_total, "by_severity": severity_counts, "overall_score": round(overall_score, 2), "scoring_profile": self.scoring_profile_name},
+            "summary": {"baseline_entries_total": len(baseline_data), "verified_entries_total": len(verified_entries), "assessed_endpoints": len(assessments), "skipped_entries": len(skipped_entries), "scenario_results_total": scenario_total, "findings_total": findings_total, "by_severity": severity_counts, "overall_score": round(overall_score, 2), "protocol_score": round(protocol_avg, 2), "business_score": round(business_avg, 2), "scoring_profile": self.scoring_profile_name, "remote_attempted": remote_summary.get("attempted", 0), "remote_responded": remote_summary.get("responded", 0), "remote_errors": remote_summary.get("errors", 0)},
+            "remote_execution": remote_summary,
+            "error_clusters": global_error_clusters,
             "skipped_entries": skipped_entries,
             "baseline_gap_summary": gap_summary,
             "assessments": assessments,
+        }
+
+    def _summarize_error_clusters(self, assessments: list[dict[str, Any]]) -> dict[str, Any]:
+        mode_counts: dict[str, int] = {}
+        endpoint_top_modes: dict[str, str] = {}
+        for item in assessments:
+            portrait = item.get("error_portrait", {}) or {}
+            endpoint_id = str(item.get("endpoint_id") or "unknown")
+            top = portrait.get("top_failure_mode")
+            if top:
+                endpoint_top_modes[endpoint_id] = top
+            for mode, count in (portrait.get("response_mode_counts", {}) or {}).items():
+                mode_counts[mode] = mode_counts.get(mode, 0) + int(count)
+        sorted_modes = sorted(mode_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        return {
+            "global_mode_counts": {k: v for k, v in sorted_modes},
+            "endpoint_top_modes": endpoint_top_modes,
         }
 
     def save_report(self, report: dict[str, Any], filename: Optional[str] = None) -> Path:
@@ -689,6 +786,7 @@ class BaselineAssessmentEngine:
         local_result = executor.execute(payload, allow_captured_message_fallback=bool(scenario.get("allow_captured_message_fallback")))
         request_preview = local_result.get("request_preview")
         observations = []
+        skip_reason = None
         status = "LOCAL_OK" if local_result.get("success") else "LOCAL_FAILED"
         request_tamper = scenario.get("request_tamper")
         if request_tamper:
@@ -697,7 +795,7 @@ class BaselineAssessmentEngine:
                 if request_preview:
                     observations.append("本地请求体不可重建，已回退使用 capture trace 中的 FETCH body。")
             if request_preview and request_preview.get("send_ready"):
-                tamper_result = self._apply_request_tamper(request_preview, request_tamper)
+                tamper_result = self._apply_request_tamper(request_preview, request_tamper, entry)
                 if tamper_result.get("success"):
                     request_preview = tamper_result.get("request_preview")
                     observations.append(tamper_result.get("reason"))
@@ -705,20 +803,29 @@ class BaselineAssessmentEngine:
                         status = "LOCAL_OK"
                 else:
                     status = "SKIPPED"
-                    observations.append(tamper_result.get("reason"))
+                    skip_reason = tamper_result.get("reason")
+                    observations.append(skip_reason)
             else:
                 status = "SKIPPED"
-                observations.append("缺少可用请求体，无法执行协议篡改场景。")
+                skip_reason = "缺少可用请求体，无法执行协议篡改场景。"
+                observations.append(skip_reason)
         if local_result.get("limitations"):
             observations.extend(local_result.get("limitations"))
+            if status == "SKIPPED" and not skip_reason:
+                skip_reason = next((item for item in local_result.get("limitations", []) if item), None)
         remote_result = {"attempted": False, "status_code": None, "elapsed_ms": None, "body_preview": None, "error": None}
         if self.send_requests and request_preview and request_preview.get("send_ready"):
             remote_result = self._send_request(entry, request_preview)
+            remote_result["response_mode"] = classify_response_mode(remote_result)
             if remote_result.get("attempted") and remote_result.get("status_code") is not None:
                 status = "REMOTE_SENT"
             elif remote_result.get("error"):
                 observations.append(remote_result["error"])
-        return {"scenario_id": scenario["scenario_id"], "category": scenario["category"], "title": scenario["title"], "description": scenario["description"], "status": status, "payload": payload, "local_replay": {"success": bool(local_result.get("success")), "error": local_result.get("error"), "named_outputs": local_result.get("named_outputs", {}), "final_output_preview": truncate_text(local_result.get("final_output"), 120)}, "request_preview": request_preview, "remote_result": remote_result, "observations": observations}
+        else:
+            remote_result["response_mode"] = classify_response_mode(remote_result)
+        if status == "SKIPPED" and not skip_reason:
+            skip_reason = next((item for item in observations if item), None)
+        return {"scenario_id": scenario["scenario_id"], "category": scenario["category"], "title": scenario["title"], "description": scenario["description"], "status": status, "skip_reason": skip_reason, "payload": payload, "local_replay": {"success": bool(local_result.get("success")), "error": local_result.get("error"), "named_outputs": local_result.get("named_outputs", {}), "final_output_preview": truncate_text(local_result.get("final_output"), 120)}, "request_preview": request_preview, "remote_result": remote_result, "observations": observations}
 
     def _build_captured_request_preview(self, entry: dict[str, Any]) -> Optional[dict[str, Any]]:
         trace = entry.get("validation", {}).get("trace", []) or []
@@ -740,12 +847,55 @@ class BaselineAssessmentEngine:
                 return {"body_type": "url_search_params" if "=" in stripped else "raw_text", "headers": headers, "resolved_fields": {}, "missing_fields": [], "body_text": stripped, "body_json": None, "send_ready": True}
         return None
 
-    def _apply_request_tamper(self, preview: dict[str, Any], tamper: dict[str, Any]) -> dict[str, Any]:
+    def _collect_tamper_candidates(self, preview: dict[str, Any], fields: list[str], entry: Optional[dict[str, Any]] = None) -> list[str]:
+        available = set()
+        body_json = preview.get("body_json")
+        body_text = preview.get("body_text")
+        if isinstance(body_json, dict):
+            available.update(str(key) for key in body_json.keys())
+        if isinstance(body_text, str) and "=" in body_text:
+            for key, _ in urllib.parse.parse_qsl(body_text, keep_blank_values=True):
+                available.add(str(key))
+
+        candidates: list[str] = []
+        for base in fields:
+            for name in [base, *TAMPER_FIELD_ALIASES.get(str(base), [])]:
+                if name in available and name not in candidates:
+                    candidates.append(name)
+
+        # 通过静态 packing 映射补充别名反查（field_name <- source_name）
+        if entry:
+            execution_flow = ((entry.get("meta", {}) or {}).get("execution_flow", []) or [])
+            for step in execution_flow:
+                if str(step.get("step_type", "")).lower() != "pack":
+                    continue
+                packing_info = (step.get("runtime_args", {}) or {}).get("packing_info", {}) or {}
+                field_sources = packing_info.get("field_sources", {}) or {}
+                for field_name, source_info in field_sources.items():
+                    if field_name not in available:
+                        continue
+                    source_name = None
+                    if isinstance(source_info, dict):
+                        source_name = str(source_info.get("source_name") or "")
+                    for base in fields:
+                        alias_set = {str(base), *TAMPER_FIELD_ALIASES.get(str(base), [])}
+                        if source_name in alias_set and field_name not in candidates:
+                            candidates.append(str(field_name))
+
+        # 回退：如果还是找不到，优先尝试现有的安全相关字段
+        if not candidates:
+            fallback_priority = ["signature", "nonce", "timestamp", "encryptedData", "data", "random"]
+            for key in fallback_priority:
+                if key in available and key not in candidates:
+                    candidates.append(key)
+        return candidates
+
+    def _apply_request_tamper(self, preview: dict[str, Any], tamper: dict[str, Any], entry: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         cloned = copy.deepcopy(preview)
         body_json = cloned.get("body_json")
         body_text = cloned.get("body_text")
         action = tamper.get("action")
-        fields = tamper.get("fields", [])
+        fields = self._collect_tamper_candidates(cloned, tamper.get("fields", []) or [], entry)
         replacement = tamper.get("value")
         length = int(tamper.get("length", 12))
         if isinstance(body_json, dict):
@@ -760,7 +910,7 @@ class BaselineAssessmentEngine:
                     body_json[field_name] = str(body_json[field_name])[:length]; cloned["body_text"] = json.dumps(body_json, ensure_ascii=False); return {"success": True, "request_preview": cloned, "reason": f"已截断字段 {field_name}"}
                 if action == "duplicate_field":
                     return {"success": False, "reason": "JSON 请求体无法自然表达重复字段。"}
-            return {"success": False, "reason": "JSON 请求体中未找到可篡改目标字段。"}
+            return {"success": False, "reason": f"JSON 请求体中未找到可篡改目标字段（候选: {fields or 'none'}）。"}
         if isinstance(body_text, str) and "=" in body_text:
             pairs = urllib.parse.parse_qsl(body_text, keep_blank_values=True)
             if not pairs:
@@ -777,7 +927,7 @@ class BaselineAssessmentEngine:
                         pairs[index] = (key, str(value)[:length]); cloned["body_text"] = urllib.parse.urlencode(pairs); return {"success": True, "request_preview": cloned, "reason": f"已截断字段 {field_name}"}
                     if action == "duplicate_field":
                         pairs.append((key, str(replacement if replacement is not None else value))); cloned["body_text"] = urllib.parse.urlencode(pairs); return {"success": True, "request_preview": cloned, "reason": f"已追加重复字段 {field_name}"}
-            return {"success": False, "reason": "URL 编码请求体中未找到可篡改目标字段。"}
+            return {"success": False, "reason": f"URL 编码请求体中未找到可篡改目标字段（候选: {fields or 'none'}）。"}
         return {"success": False, "reason": "当前请求体格式不支持该篡改动作。"}
 
     def _send_request(self, entry: dict[str, Any], request_preview: dict[str, Any]) -> dict[str, Any]:
@@ -809,6 +959,13 @@ class BaselineAssessmentEngine:
         scenario_deductions = []
         total_findings = 0.0
         total_scenarios = 0.0
+        layer_weights = self.scoring_profile.get("layer_score_weights", {}) or {}
+        protocol_weight = float(layer_weights.get("protocol", 0.5))
+        business_weight = float(layer_weights.get("business", 0.5))
+        total_weight = protocol_weight + business_weight if (protocol_weight + business_weight) > 0 else 1.0
+        protocol_weight /= total_weight
+        business_weight /= total_weight
+        layer_deductions = {"protocol": 0.0, "business": 0.0}
 
         for finding in findings:
             severity = str(finding.get("severity", "info"))
@@ -817,6 +974,8 @@ class BaselineAssessmentEngine:
             category_multiplier = self._lookup_weight(category_multipliers, category, 1.0)
             deduction = round(severity_value * category_multiplier, 2)
             total_findings += deduction
+            layer_name = FINDING_LAYER_MAP.get(category, "business")
+            layer_deductions[layer_name] += deduction
             finding_deductions.append({
                 "finding_id": finding.get("id"),
                 "severity": severity,
@@ -835,6 +994,8 @@ class BaselineAssessmentEngine:
             category_multiplier = self._lookup_weight(scenario_category_multipliers, category, 1.0)
             deduction = round(status_penalty * category_multiplier, 2)
             total_scenarios += deduction
+            layer_name = SCENARIO_LAYER_MAP.get(category, "business")
+            layer_deductions[layer_name] += deduction
             scenario_deductions.append({
                 "scenario_id": scenario.get("scenario_id"),
                 "status": status,
@@ -851,12 +1012,23 @@ class BaselineAssessmentEngine:
 
         total_deduction = round(total_findings + total_scenarios + gap_deduction, 2)
         score = round(max(base_score - total_deduction, 0.0), 2)
+        protocol_gap = round(gap_deduction * protocol_weight, 2)
+        business_gap = round(gap_deduction * business_weight, 2)
+        protocol_score = round(max(base_score - layer_deductions["protocol"] - protocol_gap, 0.0), 2)
+        business_score = round(max(base_score - layer_deductions["business"] - business_gap, 0.0), 2)
         breakdown = {
             "profile": self.scoring_profile_name,
             "base_score": base_score,
             "finding_deductions": finding_deductions,
             "scenario_deductions": scenario_deductions,
             "baseline_gap_penalty": {"gap_count": len(baseline_gaps), "per_gap": per_gap, "max_total": max_total, "deduction": gap_deduction},
+            "layer_scores": {
+                "weights": {"protocol": protocol_weight, "business": business_weight},
+                "deductions": {"protocol": round(layer_deductions["protocol"], 2), "business": round(layer_deductions["business"], 2)},
+                "gap_allocation": {"protocol": protocol_gap, "business": business_gap},
+                "protocol_score": protocol_score,
+                "business_score": business_score,
+            },
             "totals": {"findings": round(total_findings, 2), "scenarios": round(total_scenarios, 2), "baseline_gaps": gap_deduction, "deduction": total_deduction, "final_score": score},
         }
         return score, breakdown
@@ -886,7 +1058,10 @@ class BaselineAssessmentEngine:
         limitations = [gap["reason"] for gap in baseline_gaps]
         scenario_results = [self._run_scenario(entry, scenario) for scenario in self._build_scenarios(payload)]
         score, score_breakdown = self._calculate_security_score(findings, baseline_gaps, scenario_results)
+        layer_scores = (score_breakdown.get("layer_scores", {}) or {})
         risk_level = self._score_to_risk(score)
+        remote_execution = self._summarize_remote_execution(scenario_results)
+        error_portrait = summarize_response_modes(scenario_results)
         return {
             "endpoint_id": meta.get("id", "unknown"),
             "endpoint": endpoint_url,
@@ -900,12 +1075,55 @@ class BaselineAssessmentEngine:
             "baseline_gaps": baseline_gaps,
             "findings": findings,
             "scenario_results": scenario_results,
+            "remote_execution": remote_execution,
+            "error_portrait": error_portrait,
             "limitations": limitations,
             "security_score": round(score, 2),
+            "protocol_score": float(layer_scores.get("protocol_score", score)),
+            "business_score": float(layer_scores.get("business_score", score)),
             "score_breakdown": score_breakdown,
             "risk_level": risk_level,
             "source_refs": {"baseline_file": str(baseline_path), "static_analysis_file": meta.get("source_analysis_file")},
         }
+
+    def _summarize_remote_execution(self, scenario_results: list[dict[str, Any]]) -> dict[str, Any]:
+        summary = {
+            "total_scenarios": len(scenario_results),
+            "attempted": 0,
+            "responded": 0,
+            "errors": 0,
+            "not_attempted": 0,
+            "status_code_counts": {},
+            "error_counts": {},
+            "avg_elapsed_ms": None,
+            "p95_elapsed_ms": None,
+        }
+        elapsed_values: list[float] = []
+        for scenario in scenario_results:
+            remote = scenario.get("remote_result", {}) or {}
+            if not remote.get("attempted"):
+                summary["not_attempted"] += 1
+                continue
+            summary["attempted"] += 1
+            status_code = remote.get("status_code")
+            if status_code is not None:
+                summary["responded"] += 1
+                key = str(status_code)
+                summary["status_code_counts"][key] = summary["status_code_counts"].get(key, 0) + 1
+            error = remote.get("error")
+            if error:
+                summary["errors"] += 1
+                normalized_error = re.sub(r"0x[0-9A-Fa-f]+", "0xADDR", str(error))
+                summary["error_counts"][normalized_error] = summary["error_counts"].get(normalized_error, 0) + 1
+            elapsed_ms = remote.get("elapsed_ms")
+            if isinstance(elapsed_ms, (int, float)):
+                elapsed_values.append(float(elapsed_ms))
+        if elapsed_values:
+            ordered = sorted(elapsed_values)
+            p95_index = max(0, min(len(ordered) - 1, int((len(ordered) - 1) * 0.95)))
+            summary["avg_elapsed_ms"] = round(sum(ordered) / len(ordered), 2)
+            summary["p95_elapsed_ms"] = round(ordered[p95_index], 2)
+        return summary
 
 
 def build_summary_table(report: dict[str, Any]) -> Table:

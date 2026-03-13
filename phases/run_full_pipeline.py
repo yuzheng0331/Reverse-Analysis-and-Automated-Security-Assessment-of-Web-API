@@ -24,6 +24,8 @@ def main() -> None:
     parser.add_argument("--url", default=DEFAULT_TARGET_URL, help="目标页面 URL")
     parser.add_argument("--username", default=DEFAULT_USERNAME, help="填入 DOM / 基线的用户名")
     parser.add_argument("--password", default=DEFAULT_PASSWORD, help="填入 DOM / 基线的密码")
+    parser.add_argument("--phase5-send", action="store_true", help="在阶段5启用真实目标验证，将构造场景真正发送到目标 API")
+    parser.add_argument("--phase5-timeout", type=float, default=10.0, help="阶段5真实发包超时时间（秒）")
     parser.add_argument("--log-file", default=str(BASE_DIR / "runtime" / "full_pipeline_utf8.log"), help="统一 UTF-8 日志文件路径；默认写入 runtime/full_pipeline_utf8.log")
     args = parser.parse_args()
 
@@ -46,7 +48,13 @@ def main() -> None:
         run_phase4(baseline_path, False, log_handle)
 
         emit("[总控] 阶段5：安全评估", log_handle)
-        run_phase5(baseline_path, ["default", "paper_v1"], log_handle)
+        run_phase5(
+            baseline_path,
+            ["default", "paper_v1"],
+            log_handle,
+            send_requests=args.phase5_send,
+            timeout=args.phase5_timeout,
+        )
 
         emit("[总控] 阶段6：生成报告与图表", log_handle)
         run_phase6(baseline_path, "paper_v1", log_handle)
@@ -56,4 +64,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

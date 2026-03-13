@@ -32,6 +32,40 @@ STATUS_COLORS = {
     "REMOTE_SENT": "#1f77b4",
 }
 
+REMOTE_STATUS_COLORS = {
+    "未发起": "#9e9e9e",
+    "已发送": "#1f77b4",
+    "已响应": "#2ca02c",
+    "错误": "#d62728",
+}
+
+
+def _classify_response_mode(remote_result: dict[str, Any]) -> str:
+    if not isinstance(remote_result, dict):
+        return "NOT_ATTEMPTED"
+    if not remote_result.get("attempted"):
+        return "NOT_ATTEMPTED"
+    if remote_result.get("error"):
+        return "TRANSPORT_ERROR"
+    body = str(remote_result.get("body_preview") or "")
+    body_lc = body.lower()
+    status_code = remote_result.get("status_code")
+    if isinstance(status_code, int) and status_code >= 500:
+        return "SERVER_5XX"
+    if "\"success\":true" in body_lc:
+        return "APP_SUCCESS"
+    if "invalid input" in body_lc or "invalid username" in body_lc:
+        return "APP_INVALID_INPUT"
+    if "missing" in body_lc or "no data" in body_lc:
+        return "APP_MISSING_DATA"
+    if "decrypt" in body_lc or "解密失败" in body:
+        return "APP_DECRYPT_FAIL"
+    if isinstance(status_code, int) and status_code >= 400:
+        return "HTTP_4XX"
+    if isinstance(status_code, int) and status_code >= 200:
+        return "HTTP_OK_OTHER"
+    return "UNKNOWN"
+
 
 def _load_json(path: Path) -> Any:
     return load_json_file(path)
@@ -89,6 +123,96 @@ def _save_figure(fig: plt.Figure, path: Path) -> None:
     fig.tight_layout()
     fig.savefig(path, dpi=180, bbox_inches="tight")
     plt.close(fig)
+
+
+def _save_placeholder_chart(output_path: Path, title: str, message: str) -> Path:
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.axis("off")
+    ax.text(0.5, 0.6, title, ha="center", va="center", fontsize=16, fontweight="bold")
+    ax.text(0.5, 0.4, message, ha="center", va="center", fontsize=12, wrap=True)
+    _save_figure(fig, output_path)
+    return output_path
+
+
+def _build_remote_summary(assessment: dict[str, Any]) -> dict[str, Any]:
+    remote = assessment.get("remote_execution", {}) or {}
+    if remote:
+        return remote
+    summary: dict[str, Any] = {
+        "total_scenarios": 0,
+        "attempted": 0,
+        "responded": 0,
+        "errors": 0,
+        "not_attempted": 0,
+        "status_code_counts": {},
+        "error_counts": {},
+        "avg_elapsed_ms": None,
+        "p95_elapsed_ms": None,
+    }
+    elapsed_values: list[float] = []
+    for endpoint in assessment.get("assessments", []) or []:
+        for scenario in endpoint.get("scenario_results", []) or []:
+            summary["total_scenarios"] += 1
+            remote_result = scenario.get("remote_result", {}) or {}
+            if not remote_result.get("attempted"):
+                summary["not_attempted"] += 1
+                continue
+            summary["attempted"] += 1
+            status_code = remote_result.get("status_code")
+            if status_code is not None:
+                key = str(status_code)
+                summary["responded"] += 1
+                summary["status_code_counts"][key] = summary["status_code_counts"].get(key, 0) + 1
+            error = remote_result.get("error")
+            if error:
+                summary["errors"] += 1
+                summary["error_counts"][error] = summary["error_counts"].get(error, 0) + 1
+            elapsed_ms = remote_result.get("elapsed_ms")
+            if isinstance(elapsed_ms, (int, float)):
+                elapsed_values.append(float(elapsed_ms))
+    if elapsed_values:
+        ordered = sorted(elapsed_values)
+        p95_index = max(0, min(len(ordered) - 1, int((len(ordered) - 1) * 0.95)))
+        summary["avg_elapsed_ms"] = round(sum(ordered) / len(ordered), 2)
+        summary["p95_elapsed_ms"] = round(ordered[p95_index], 2)
+    return summary
+
+
+def _build_endpoint_remote_rows(assessment: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for endpoint in assessment.get("assessments", []) or []:
+        remote = endpoint.get("remote_execution", {}) or {}
+        if not remote:
+            scenarios = endpoint.get("scenario_results", []) or []
+            remote = {
+                "total_scenarios": len(scenarios),
+                "attempted": 0,
+                "responded": 0,
+                "errors": 0,
+                "not_attempted": len(scenarios),
+                "status_code_counts": {},
+            }
+            for scenario in scenarios:
+                remote_result = scenario.get("remote_result", {}) or {}
+                if not remote_result.get("attempted"):
+                    continue
+                remote["attempted"] += 1
+                remote["not_attempted"] = max(0, remote["not_attempted"] - 1)
+                status_code = remote_result.get("status_code")
+                if status_code is not None:
+                    remote["responded"] += 1
+                    key = str(status_code)
+                    remote["status_code_counts"][key] = remote["status_code_counts"].get(key, 0) + 1
+                if remote_result.get("error"):
+                    remote["errors"] += 1
+        rows.append({
+            "endpoint_id": endpoint.get("endpoint_id", "unknown"),
+            "attempted": int(remote.get("attempted", 0)),
+            "responded": int(remote.get("responded", 0)),
+            "errors": int(remote.get("errors", 0)),
+            "not_attempted": int(remote.get("not_attempted", 0)),
+        })
+    return rows
 
 
 def chart_workflow_overview(output_dir: Path) -> Path:
@@ -230,6 +354,132 @@ def chart_scenario_status_distribution(assessment_path: Path, output_dir: Path) 
     return path
 
 
+def chart_remote_execution_overview(assessment_path: Path, output_dir: Path) -> Path:
+    assessment = _load_json(assessment_path)
+    remote = _build_remote_summary(assessment)
+    path = output_dir / "remote_execution_overview.png"
+    total = int(remote.get("total_scenarios", 0))
+    if total <= 0:
+        return _save_placeholder_chart(path, "在线验证执行总览图", "当前 assessment 中没有可用场景数据。")
+
+    categories = ["未发起", "已发送", "已响应", "错误"]
+    values = [
+        int(remote.get("not_attempted", 0)),
+        int(remote.get("attempted", 0)),
+        int(remote.get("responded", 0)),
+        int(remote.get("errors", 0)),
+    ]
+    fig, ax = plt.subplots(figsize=(8.5, 5))
+    bars = ax.bar(categories, values, color=[REMOTE_STATUS_COLORS[item] for item in categories])
+    ax.set_ylabel("场景数量")
+    ax.set_title("在线验证执行总览图", fontsize=15)
+    for bar, value in zip(bars, values):
+        ax.text(bar.get_x() + bar.get_width() / 2, value + 0.2, str(value), ha="center", va="bottom", fontsize=10)
+    _save_figure(fig, path)
+    return path
+
+
+def chart_remote_status_code_distribution(assessment_path: Path, output_dir: Path) -> Path:
+    assessment = _load_json(assessment_path)
+    remote = _build_remote_summary(assessment)
+    counts = remote.get("status_code_counts", {}) or {}
+    path = output_dir / "remote_http_status_distribution.png"
+    if not counts:
+        mode_label = "当前为本地预评估模式，未产生 HTTP 状态码。" if not (assessment.get("source", {}) or {}).get("send_requests") else "已开启真实目标验证，但尚未收到任何 HTTP 响应。"
+        return _save_placeholder_chart(path, "远程HTTP状态码分布图", mode_label)
+
+    labels = list(counts.keys())
+    values = [counts[key] for key in labels]
+    fig, ax = plt.subplots(figsize=(8.5, 5))
+    bars = ax.bar(labels, values, color="#5470c6")
+    ax.set_xlabel("HTTP 状态码")
+    ax.set_ylabel("出现次数")
+    ax.set_title("远程HTTP状态码分布图", fontsize=15)
+    for bar, value in zip(bars, values):
+        ax.text(bar.get_x() + bar.get_width() / 2, value + 0.2, str(value), ha="center", va="bottom", fontsize=10)
+    _save_figure(fig, path)
+    return path
+
+
+def chart_endpoint_remote_coverage(assessment_path: Path, output_dir: Path) -> Path:
+    assessment = _load_json(assessment_path)
+    rows = _build_endpoint_remote_rows(assessment)
+    path = output_dir / "endpoint_remote_coverage.png"
+    if not rows:
+        return _save_placeholder_chart(path, "端点在线验证覆盖图", "当前 assessment 中没有端点数据。")
+
+    endpoint_labels = [row["endpoint_id"] for row in rows]
+    not_attempted = [row["not_attempted"] for row in rows]
+    responded = [row["responded"] for row in rows]
+    errors = [row["errors"] for row in rows]
+    in_flight_only = [max(0, row["attempted"] - row["responded"] - row["errors"]) for row in rows]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    left = [0] * len(endpoint_labels)
+    for label, values, color in [
+        ("未发起", not_attempted, REMOTE_STATUS_COLORS["未发起"]),
+        ("已响应", responded, REMOTE_STATUS_COLORS["已响应"]),
+        ("错误", errors, REMOTE_STATUS_COLORS["错误"]),
+        ("已发送未响应", in_flight_only, REMOTE_STATUS_COLORS["已发送"]),
+    ]:
+        ax.barh(endpoint_labels, values, left=left, label=label, color=color)
+        left = [current + value for current, value in zip(left, values)]
+    ax.set_xlabel("场景数量")
+    ax.set_ylabel("端点")
+    ax.set_title("端点在线验证覆盖图", fontsize=15)
+    ax.legend(loc="lower right")
+    _save_figure(fig, path)
+    return path
+
+
+def chart_scenario_response_mode_heatmap(assessment_path: Path, output_dir: Path) -> Path:
+    assessment = _load_json(assessment_path)
+    path = output_dir / "scenario_response_mode_heatmap.png"
+
+    matrix_counts: dict[str, dict[str, int]] = {}
+    categories_order: list[str] = []
+    modes_order: list[str] = []
+
+    for endpoint in assessment.get("assessments", []) or []:
+        for scenario in endpoint.get("scenario_results", []) or []:
+            category = str(scenario.get("category") or "unknown")
+            remote = scenario.get("remote_result", {}) or {}
+            mode = str(remote.get("response_mode") or _classify_response_mode(remote))
+            if category not in matrix_counts:
+                matrix_counts[category] = {}
+                categories_order.append(category)
+            matrix_counts[category][mode] = matrix_counts[category].get(mode, 0) + 1
+            if mode not in modes_order:
+                modes_order.append(mode)
+
+    if not matrix_counts:
+        return _save_placeholder_chart(path, "场景类别->响应模式热力图", "当前 assessment 中没有可用场景数据。")
+
+    data = []
+    for category in categories_order:
+        row = [matrix_counts[category].get(mode, 0) for mode in modes_order]
+        data.append(row)
+
+    fig, ax = plt.subplots(figsize=(max(9, len(modes_order) * 1.2), max(4.5, len(categories_order) * 0.7)))
+    im = ax.imshow(data, cmap="YlOrRd", aspect="auto")
+    ax.set_xticks(range(len(modes_order)))
+    ax.set_xticklabels(modes_order, rotation=25, ha="right")
+    ax.set_yticks(range(len(categories_order)))
+    ax.set_yticklabels(categories_order)
+    ax.set_title("场景类别 -> 服务端响应模式热力图", fontsize=15)
+    ax.set_xlabel("响应模式")
+    ax.set_ylabel("场景类别")
+
+    for i, row in enumerate(data):
+        for j, val in enumerate(row):
+            if val > 0:
+                ax.text(j, i, str(val), ha="center", va="center", fontsize=9, color="#222")
+
+    fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02, label="计数")
+    _save_figure(fig, path)
+    return path
+
+
 def generate_all_charts(
     baseline_path: Path | None = None,
     assessment_path: Path | None = None,
@@ -249,6 +499,10 @@ def generate_all_charts(
         chart_endpoint_scores(assessment_path, output_dir),
         chart_profile_comparison(default_assessment_path, paper_assessment_path, output_dir),
         chart_scenario_status_distribution(assessment_path, output_dir),
+        chart_remote_execution_overview(assessment_path, output_dir),
+        chart_remote_status_code_distribution(assessment_path, output_dir),
+        chart_endpoint_remote_coverage(assessment_path, output_dir),
+        chart_scenario_response_mode_heatmap(assessment_path, output_dir),
     ]
     return generated
 

@@ -50,6 +50,18 @@ def _ensure_bytes(val: Any) -> bytes:
     return val.encode('utf-8')
 
 
+def _rsa_encrypt_chunked(cipher: Any, plaintext: bytes, key_size_bytes: int) -> bytes:
+    """对超长 RSA 明文执行 PKCS#1 v1.5 分块加密，避免单块长度超限。"""
+    max_chunk = key_size_bytes - 11
+    if max_chunk <= 0:
+        raise ValueError("Invalid RSA key size")
+    blocks = []
+    for index in range(0, len(plaintext), max_chunk):
+        chunk = plaintext[index:index + max_chunk]
+        blocks.append(cipher.encrypt(chunk))
+    return b"".join(blocks)
+
+
 # =============================================================================
 # Symmetric Encryption
 # =============================================================================
@@ -237,8 +249,13 @@ class RSAEncryptOperation(CryptoOperation):
             if isinstance(plaintext, str):
                 plaintext = plaintext.encode('utf-8')
 
-            # 加密
-            ciphertext = cipher.encrypt(plaintext)
+            # 加密：超长明文采用分块，避免 "Plaintext is too long"
+            key_size_bytes = key.size_in_bytes()
+            max_chunk = key_size_bytes - 11
+            if len(plaintext) > max_chunk:
+                ciphertext = _rsa_encrypt_chunked(cipher, plaintext, key_size_bytes)
+            else:
+                ciphertext = cipher.encrypt(plaintext)
 
             # 编码 (JSEncrypt outputs base64 by default)
             output = base64.b64encode(ciphertext).decode('ascii')
