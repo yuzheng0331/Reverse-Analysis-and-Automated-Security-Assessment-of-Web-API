@@ -1,0 +1,89 @@
+global:
+  fixed_site_group: SITE_A
+  allowed_route_variants:
+    - PLAIN_ROUTE
+    - WEAK_OBF_ROUTE
+  algorithm_whitelist:
+    - DES_CBC
+    - AES_CBC
+    - RSA_ONLY
+    - AES_RSA_ENVELOPE
+    - PLAINTEXT_HMAC
+
+constraints:
+  max_interlayers: 5
+  unsupported_markers:
+    - UNSUPPORTED_COMPLEX_CUSTOM_CRYPTO
+
+layer1:
+  # Layer1: 按算法分支做条件乘积求和，产出基础稳定池。
+  fixed:
+    validation_hops: single_hop
+    interlayers: []
+  algorithms:
+    AES_CBC:
+      base:
+        material_source: FRONTEND_HARDCODED
+        material_dynamicity:
+          key: static
+          iv: static
+          nonce: absent
+          timestamp: absent
+          signature: absent
+        risk_tags:
+          - BASELINE_STABLE
+        template_level: BASELINE
+      matrix:
+        key_size: [128, 192, 256]
+        mode: [CBC]
+        iv_policy: [static, random, derived]
+        padding: [Pkcs7, ZeroPadding]
+        plaintext_encoding: [utf8, json-string]
+        key_encoding: [utf8, hex]
+        iv_encoding: [utf8, base64]
+        anti_replay: [none, timestamp_only, nonce_only, nonce_timestamp]
+    RSA_ONLY:
+      base:
+        material_source: FRONTEND_HARDCODED
+        material_dynamicity:
+          key: static
+          iv: absent
+          nonce: absent
+          timestamp: absent
+          signature: absent
+        risk_tags:
+          - BASELINE_STABLE
+        template_level: BASELINE
+      matrix:
+        key_size: [1024, 2048]
+        plaintext_encoding: [utf8, json-string]
+        anti_replay: [none, timestamp_only]
+    PLAINTEXT_HMAC:
+      base:
+        material_source: FRONTEND_DERIVED
+        material_dynamicity:
+          key: dynamic
+          iv: absent
+          nonce: dynamic
+          timestamp: dynamic
+          signature: dynamic
+        session_policy:
+          binding: no_bind
+        risk_tags:
+          - BASELINE_STABLE
+        template_level: BASELINE
+      matrix:
+        plaintext_encoding: [utf8, json-string]
+        anti_replay: [nonce_only, nonce_timestamp]
+        signature_placement: [header, body, query]
+
+output:
+  directory: runtime/api_lab_builder
+  target_site_root: E:/phpStudy/phpstudy_pro/WWW/encrypt-labs-main-1
+  frozen_config: step0_frozen_config.yaml
+  step0_gate_report: step0_gate_report.json
+  layer1_pool_yaml: layer1_pool.yaml
+  layer1_pool_json: layer1_pool.json
+  layer1_gate_report: layer1_gate_report.json
+  layer1_pruned_reasons: layer1_pruned_reasons.jsonl
+

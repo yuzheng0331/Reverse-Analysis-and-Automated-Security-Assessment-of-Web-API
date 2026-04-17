@@ -23,8 +23,8 @@
 4. 在基线中预填有效 Payload，使后续浏览器捕获与 Handler 验证使用同一输入源。
 5. 通过 Playwright Hook 捕获真实运行时参数与密文，回填 Key / IV / Nonce / 时间戳 / 签名材料等信息。
 6. 用本地 Handler 逐步模拟加密过程并校验正确性。
-7. 在已验证基线上执行多场景安全评估，覆盖重放、参数变异、边界值、协议参数篡改等测试；评估模式分为**本地预评估**与**真实目标验证**两种。
-8. 输出结构化报告与图表，供毕业设计展示与论文撰写使用；报告会同时区分离线预评估结果与在线验证结果。
+7. 在已验证基线上执行多场景安全评估，覆盖重放、参数变异、边界值、协议参数篡改等测试；阶段5按统一门控规则决定场景是否进入在线验证。
+8. 输出结构化报告与图表，供毕业设计展示与论文撰写使用。
 
 ---
 
@@ -67,11 +67,8 @@ graph TD
     G --> H{是否验证通过}
     H -->|是| I[VERIFIED 基线]
     H -->|否| J[修正 Handler / 静态分析 / 基线]
-    I --> K[阶段5: 安全评估]
-    K --> K1[5A: 本地预评估]
-    K --> K2[5B: 真实目标验证]
-    K1 --> L[assessment_results/*.json]
-    K2 --> L
+    I --> K[阶段5: 安全评估与门控发送]
+    K --> L[assessment_results/*.json]
     L --> M[阶段6: 报告与图表生成]
     M --> N[report/*.html / *.md / *.json / charts/*.png]
 ```
@@ -82,7 +79,7 @@ graph TD
 
 ### 4.1 一键全链路（推荐）
 ```bash
-python main.py --url http://encrypt-labs-main/easy.php --username admin --password 123456
+python main.py --url http://encrypt-labs-main-1/generated_layer1_sample.php --username admin --password 123456
 ```
 
 说明：
@@ -91,26 +88,32 @@ python main.py --url http://encrypt-labs-main/easy.php --username admin --passwo
 
 ### 4.1.1 推荐日志方式（避免 PowerShell 重定向乱码）
 ```bash
-python main.py --url http://encrypt-labs-main/easy.php --username admin --password 123456 --log-file runtime/full_pipeline_utf8.log
+python main.py --url http://encrypt-labs-main-1/generated_layer1_sample.php --username admin --password 123456 --log-file runtime/full_pipeline_utf8.log
 ```
 
 说明：
  - 推荐使用 `--log-file` 让总控入口在 Python 内部按 **UTF-8** 写日志。
  - 不建议依赖 PowerShell 的 `>` / `2>&1` 做主日志，因为 Windows 下这类重定向常会生成 UTF-16/控制台编码混杂日志，看起来像“中文乱码”或夹杂空字符。
 
-### 4.1.2 启用阶段5真实目标验证（可选）
+### 4.1.2 配置阶段5在线验证参数（可选）
 ```bash
-python main.py --url http://encrypt-labs-main/easy.php --username admin --password 123456 --phase5-send --phase5-timeout 10
+python main.py --url http://encrypt-labs-main-1/generated_layer1_sample.php --username admin --password 123456 --phase5-timeout 10 --phase5-include-unverified
 ```
 
 说明：
-- 默认情况下，阶段5运行**本地预评估**，不会把评估场景真正发送到目标 API。
-- 开启 `--phase5-send` 后，阶段5会进入**真实目标验证**模式，把本地重建/变异后的请求真正发往目标端点。
-- `--phase5-timeout` 用于控制阶段5真实发包的超时时间。
+- 阶段5固定为“真实目标验证”单一路径。
+- 不可落地场景按门控标记为 `UNMUTATABLE` 或 `MUTATION_NOT_EFFECTIVE`，并记录跳过原因。
+- `--phase5-timeout` 用于控制阶段5真实发包的超时时间；`--phase5-include-unverified` 用于诊断阶段性数据问题。
 
 ### 4.1.3 内部阶段入口（用于开发与调试）
 ```bash
-python phases/run_full_pipeline.py --url http://encrypt-labs-main/easy.php --username admin --password 123456
+python phases/run_full_pipeline.py --layer 1 --username admin --password 123456
+```
+
+或显式指定 URL：
+
+```bash
+python phases/run_full_pipeline.py --url http://encrypt-labs-main-1/generated_layer1_sample.php --username admin --password 123456
 ```
 
 说明：
@@ -185,46 +188,61 @@ python phases/run_full_pipeline.py --url http://encrypt-labs-main/easy.php --use
 - 协议参数篡改（IV / Nonce / 时间戳 / 签名 / 密文字段）
 - 请求体回退篡改（必要时回退使用 `validation.trace` 中捕获的 `FETCH body`）
 
+口径补充（特例）：
+- 对 `PasswordPreHash`（前端口令预哈希）类端点，阶段5仅保留认证抗性场景（重放/时效/nonce/凭据一致性），并允许跳过 handler 缺失门槛；评分中不计 handler 缺失类罚分，但保留认证抗性场景失败扣分。
+
 RSA 场景补充：
 - 本地 Handler 对超长 RSA 明文采用分块加密，避免因 `Plaintext is too long` 直接导致场景本地失败。
 - 分块仅用于评估阶段提升覆盖率；是否被服务端接受仍以后续真实响应为准。
 
-### 7.1 阶段5双模式：本地预评估 vs 真实目标验证
+### 7.1 新评估口径（固定在线验证）
 
-当前项目对阶段5采用双模式口径：
+阶段5现在只保留一条评估路径：**先门控可变异性，再在线发送，再按远程预期命中扣分**。
 
-1. **5A：本地预评估（默认）**
-   - 不真实发网。
-   - 重点验证：场景是否可构造、协议字段是否可篡改、请求是否可被本地稳定重建。
-   - 适合做：协议层脆弱性分析、自动化覆盖率分析、基线缺口识别。
+1. **端点动态性检测（先判定是否依赖动态/服务端字段）**
+   - 读取 `validation.dynamic.observed`、`validation.dynamic_observed`、`meta.dynamic_endpoint_hint`。
+   - 两段式优先：
+     - 阶段2静态提示（`dynamic.hint`）提供候选动态字段和服务端中间请求线索；
+     - 阶段3动态实证（`dynamic.observed`）确认是否实际观测到动态行为。
+   - 强动态字段（如 `nonce/timestamp/signature/token/random`）命中时直接判定动态。
+   - 弱动态字段（如 `key/iv/message`）必须结合 hint/observed 理由联合判定，避免把固定 Key/IV 的静态端点误判为动态端点。
+   - 缺少两段式字段时，阶段5仅做兜底推断（`trace/hints/execution_flow`），并建议回溯阶段2/3补齐证据字段。
 
-2. **5B：真实目标验证（启用 `--send` / `--phase5-send`）**
-   - 将阶段5构造出的场景真正发送到目标 API。
-   - 重点观察：HTTP 状态码、响应体、错误模式、耗时差异、服务端是否接受重放/篡改请求。
-   - 适合做：真实漏洞确认、服务端校验行为验证、在线攻击场景效果判断。
+2. **capture 使用策略（按端点类型分流）**
+   - 静态端点：维持“本地执行流重建请求包 + 在线发送”现状。
+   - 动态端点：
+     - 服务端依赖型（存在 server intermediate fetch）：每个场景 fresh capture 一次，再变异并发送；
+     - 非服务端依赖型：每个端点 fresh capture 一次后复用，再执行各场景变异发送。
+   - 性能实现：服务端依赖型端点的场景级 fresh capture 采用“单浏览器进程 + 多场景并发 context”执行，降低重复启动浏览器开销。
+   - 对服务端依赖型动态端点启用会话连续性模式：发送时复用 capture 回填的会话 cookie。
+   - 若变异未映射到最终请求包，标记 `MUTATION_NOT_EFFECTIVE` 并跳过该场景。
 
-因此：
-- 前四个阶段的核心价值，是建立“**合法请求重构能力**”。
-- 阶段5A回答“**这个攻击请求我能否稳定构造出来**”。
-- 阶段5B回答“**服务器是否真的会接受或拒绝这个攻击请求**”。
+3. **状态机可变异性判定（门控）**
+   - 可变异且可发送：进入在线验证。
+   - 不可变异：标记 `UNMUTATABLE`。
+   - 变异未落地：标记 `MUTATION_NOT_EFFECTIVE`。
+   - 以上门控场景会保留诊断信息，但不作为“远程预期未命中”扣分对象。
 
-### 7.2 “动态验证” 与 “真实请求发送” 的区别
+4. **在线请求发送与响应归类**
+   - 对可发送场景执行真实请求（静态端点来自本地重建；动态端点来自场景级 fresh capture 后的变异包）。
+   - 远程结果统一归类为三层标签：协议层 / 结构层 / 语义层，并融合为 `response_mode`。
 
-这两个概念在当前项目里不是一回事：
+5. **评分扣分逻辑（远程命中驱动）**
+   - 每个场景先计算 `matched`（远程模式命中或三层规则命中）。
+   - `matched = False` 时触发 `expectation_mismatch_penalties`（按场景类别加权）。
+   - `matched = True` 且配置 `waive_penalty_on_match` 时，该场景不扣分。
+   - 本地结果仅用于门控分类（如 `UNMUTATABLE`、`MUTATION_NOT_EFFECTIVE`），不参与命中判定。
+   - 若端点属于“服务端依赖型动态端点”且检测到跨会话重放仍成功，则追加“会话绑定缺失”扣分（仅适用端点）。
 
-1. **阶段 3 Playwright 动态捕获**
-   - 一定运行在真实浏览器页面环境中。
-   - 目的是触发前端 JS，加密、签名、组包，并捕获密文与运行时参数。
-   - 这一阶段属于**动态验证 / 动态捕获**，并不是报告里 `send_requests` 字段的含义。
+### 7.2 阶段3动态捕获 与 阶段5在线验证的职责边界
 
-2. **阶段 5 安全评估真实请求发送**
-   - 指的是评估阶段是否把本地重建或变异后的请求，真正发送到目标 API。
-   - 由 `assess/assess_endpoint.py --send` 控制。
-   - 如果未开启，则报告中会显示：`安全评估阶段真实请求发送: False`。
+1. **阶段3 Playwright 动态捕获**
+   - 负责获取真实运行时参数、密文与请求轨迹，解决“是否能重建请求链路”的问题。
 
-因此：
-- 你看到“动态验证成功”，说明阶段 3 已经在真实浏览器中拿到了运行时密文/参数。
-- 你看到报告里“真实请求发送: False”，只表示阶段 5 默认没有把评估场景真正发到服务器。
+2. **阶段5 安全评估在线验证**
+   - 负责在可发送场景下对目标 API 做真实请求，并依据远程结果进行预期命中判定与评分扣分。
+
+因此：阶段3是数据回填与链路还原，阶段5是安全判定与风险计分；两者串联，不互相替代。
 
 ### 7.3 SKIPPED 的含义
 
@@ -250,6 +268,39 @@ RSA 场景补充：
 评分说明文档：
 - `configs/scoring_profiles.md`
 
+### 7.4 单端点报文调试脚本
+
+用于调试某个端点在阶段5中的“多场景”请求构造与响应：
+- 原包（capture trace + baseline_replay 重建包）
+- 每个场景的变异包（`scenario_packets[*].mutated_packet`）
+- 每个场景的响应包（`scenario_packets[*].response_packet`）
+- 每个场景的判定诊断（`judgement`：显示是否命中、命中依据是远程模式还是三层规则）
+
+说明：
+- `baseline_replay` 既是一个评估场景，也是原包重建的基准来源。
+- 原包中的 `from_reconstructed_baseline` 用于提供“对照基线”；同时在 `scenario_packets` 中也会出现 `baseline_replay` 这一场景结果，二者用途不同，不冲突。
+
+脚本位置：
+- `scripts/debug_endpoint_packets.py`
+
+示例：
+```bash
+python scripts/debug_endpoint_packets.py --endpoint-id aes
+```
+
+说明：
+- 调试脚本按统一口径执行真实发包（用于直接观察远程响应）。
+
+仅调试单一场景（可选）：
+```bash
+python scripts/debug_endpoint_packets.py --endpoint-id aes --scenario-id crypto_signature_corruption
+```
+
+可选输出到文件：
+```bash
+python scripts/debug_endpoint_packets.py --endpoint-id aes --scenario-id payload_missing_field --output-json runtime/debug_packets_aes.json
+```
+
 双分制评分补充：
 - 评估结果除 `overall_score` 外，还会输出：
   - `protocol_score`（协议层风险分）
@@ -257,31 +308,75 @@ RSA 场景补充：
 - 双分制权重来自 `configs/scoring_profiles.yaml` 的 `layer_score_weights`。
 
 错误语义聚类补充：
-- 阶段5会对响应模式做语义归类（如 `APP_INVALID_INPUT`、`APP_MISSING_DATA`、`APP_DECRYPT_FAIL`、`APP_SUCCESS`），并输出端点级失败画像。
+- 阶段5会对响应模式做语义归类（如 `APP_INVALID_INPUT`、`APP_MISSING_DATA`、`APP_DECRYPT_FAIL`、`APP_REJECTED`、`APP_SUCCESS`），用于全局统计与热力图分析；端点主表改为展示“远程响应命中明细 + 实际响应”，本地失败仅做备注。
+
+三层判定口径（去 AI）：
+- 协议层：`NOT_ATTEMPTED` / `TRANSPORT_ERROR` / `HTTP_4XX` / `SERVER_5XX` / `HTTP_2XX`
+- 结构层：`JSON_APP_STRUCTURED` / `JSON_OBJECT` / `JSON_ARRAY` / `HTML_TEXT` / `PLAIN_TEXT` / `BODY_EMPTY`
+- 语义层：基于关键词规则匹配（如 `invalid` / `missing` / `decrypt` / `"success":true`）
+- 语义层补充：当响应体为 `{"success":false}` 时，会归类为 `APP_REJECTED`（业务拒绝），不再误判为 `APP_SUCCESS`。
+- 最终 `response_mode` 由三层融合规则生成，不依赖 AI 语义模型。
+- 诊断口径：`baseline_replay` 默认要求成功（`APP_SUCCESS`）。若网站响应风格差异较大，但命中预设三层规则（`response_layer_any_of`），同样视为命中，不触发“预期未命中扣分”。
+
+### 7.5 评估判定逻辑（泛化 + 诊断）
+
+阶段5对每个场景采用二元判定（命中 / 未命中），并用于评分：
+
+1. **先归一化实际结果**
+   - 通过三层规则得到：
+     - `actual_remote_mode`
+     - `actual_response_layers = {protocol, structure, semantic}`
+
+2. **再与预期对比**
+   - 远程模式匹配：
+     - `remote_mode_match = (actual_remote_mode in expected_remote_modes)`
+   - 三层规则匹配（诊断）：
+     - `response_layer_match = OR(response_layer_any_of)`
+     - 该字段用于解释响应特征，不参与最终命中计算。
+
+3. **最终命中判定**
+   - `matched = remote_mode_match`
+   - 若未配置 `expected_remote_modes`，则 `matched = None`（未评估）。
+
+4. **动态端点发送策略（简化版）**
+   - 服务端依赖型动态端点：每场景 fresh capture，不复用上一场景动态材料。
+   - 非服务端依赖型动态端点：每端点 fresh 一次后复用，减少阶段5重复捕获开销。
+   - 所有动态端点均在 fresh 样本上再变异并发送，避免污染基线对照。
+
+5. **评分规则（诊断导向）**
+   - `matched = True`：不触发预期未命中扣分。
+   - `matched = False`：触发 `expectation_mismatch_penalties`。
+   - `baseline_replay` 采用更高的未命中惩罚（用于诊断 API 基线健壮性）。
+
+这套逻辑兼顾了：
+- **诊断性**：基线重放必须成功，否则扣分。
+- **泛化性**：不同网站响应风格可通过三层规则命中避免误罚。
 
 ---
 
 ## 8. 图表输出
 
-阶段 6 会同步生成 9 张图表，输出到：
+阶段 6 会同步生成 7 张图表，输出到：
 - `report/charts/`
 
 包括：
-1. `workflow_overview.png`
-2. `validation_comparison_distribution.png`
-3. `endpoint_security_scores.png`
-4. `profile_score_comparison.png`
-5. `scenario_status_distribution.png`
+1. `validation_comparison_distribution.png`
+2. `endpoint_security_scores.png`
+3. `profile_score_comparison.png`
+4. `endpoint_scenario_state_machine_matrix.png`
+5. `endpoint_scenario_expectation_hit_matrix.png`
 6. `remote_execution_overview.png`
-7. `remote_http_status_distribution.png`
-8. `endpoint_remote_coverage.png`
-9. `scenario_response_mode_heatmap.png`
+7. `scenario_response_mode_heatmap.png`
 
 其中新增的在线评估图表重点对应阶段5真实目标验证：
 - `remote_execution_overview.png`：在线验证执行总览
-- `remote_http_status_distribution.png`：HTTP 状态码分布
-- `endpoint_remote_coverage.png`：各端点在线验证覆盖情况
 - `scenario_response_mode_heatmap.png`：场景类别到响应模式的热力图
+
+新增预期命中图：
+- `endpoint_scenario_expectation_hit_matrix.png`：每个端点在各场景下是否命中远程响应预期（命中/未命中/未定义预期/无该场景）
+
+新增门控矩阵图：
+- `endpoint_scenario_state_machine_matrix.png`：每个端点在每个场景下落入的状态机门控类型（多色分类矩阵，便于快速定位哪个场景被 `UNMUTATABLE` 或 `MUTATION_NOT_EFFECTIVE`）。
 
 ---
 
@@ -344,7 +439,7 @@ RSA 场景补充：
 - `phases/phase4_verify_handlers.py`
   - 使用本地 Handler 对基线逐端点进行正确性验证。
 - `phases/phase5_assess.py`
-  - 执行安全评估场景（本地预评估 / 在线真实发送）。
+  - 执行安全评估场景（统一门控后按可落地性决定是否在线发送）。
 - `phases/phase6_generate_report.py`
   - 汇总 assessment 结果，生成报告与图表。
 - `phases/run_full_pipeline.py`
@@ -367,7 +462,7 @@ RSA 场景补充：
   - 聚合静态分析结果，建立“端点 -> 算法/操作/调用痕迹”映射。
 
 - `assess/assess_endpoint.py`
-  - 评估引擎核心：场景构造、请求篡改、可选真实发送、风险评分。
+  - 评估引擎核心：场景构造、请求篡改、在线验证发送、风险评分。
   - 产出双分制评分（`overall_score`、`protocol_score`、`business_score`）与错误语义聚类。
 - `assess/report_gen.py`
   - 读取 assessment + baseline + static analysis，生成 HTML/Markdown/JSON 报告。
@@ -416,16 +511,16 @@ python -m playwright install chromium
 
 - 用户名：`admin`
 - 密码：`123456`
-- URL：`http://encrypt-labs-main/easy.php`
+- URL：`http://encrypt-labs-main-1/generated_layer1_sample.php`
 
 直接执行：
 ```bash
-python main.py --url http://encrypt-labs-main/easy.php --username admin --password 123456
+python main.py --url http://encrypt-labs-main-1/generated_layer1_sample.php --username admin --password 123456
 ```
  
  如果需要保存可读日志，推荐：
 ```bash
-python main.py --url http://encrypt-labs-main/easy.php --username admin --password 123456 --log-file runtime/full_pipeline_utf8.log
+python main.py --url http://encrypt-labs-main-1/generated_layer1_sample.php --username admin --password 123456 --log-file runtime/full_pipeline_utf8.log
 ```
 
 ---
@@ -437,7 +532,7 @@ python main.py --url http://encrypt-labs-main/easy.php --username admin --passwo
 3. 旧脚本目录仍保留，是为了兼容与复用核心实现；日常答辩展示不建议直接从 `scripts/` 进入。
 4. 如果某个阶段失败，应优先回溯前一阶段产物，而不是跳过继续执行。
 5. 如果需要保留运行日志，请优先使用 `--log-file runtime/full_pipeline_utf8.log`，不要把 PowerShell 重定向日志作为主日志来源。
-6. 阶段5默认是**本地预评估**；若需要得到服务器响应并做真实目标验证，必须显式开启 `--phase5-send` 或在 `phases/phase5_assess.py` 中使用 `--send`。
+6. 阶段5采用固定在线验证口径；若场景未发送，通常由门控结果（如 `UNMUTATABLE`、`MUTATION_NOT_EFFECTIVE`）或链路问题触发。
 7. 如果 Markdown/IDE 对 README 的目录锚点有警告，一般不影响项目实际运行。
 
 ---
@@ -447,6 +542,7 @@ python main.py --url http://encrypt-labs-main/easy.php --username admin --passwo
 - 总体阶段计划：`plan-reverseAnalysisPipeline.prompt.md`
 - Handler 说明：`handlers/handlers.md`
 - 评分配置说明：`configs/scoring_profiles.md`
+- 三层判定规则说明：`assess/response_layer_rules.md`
 
 ---
 

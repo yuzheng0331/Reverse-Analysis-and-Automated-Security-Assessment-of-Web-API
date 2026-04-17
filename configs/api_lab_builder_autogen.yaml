@@ -1,0 +1,279 @@
+seed_templates:
+  - id: aes_seed
+    algorithm_stack: AES_CBC
+    algo_params:
+      key_size: 128
+      mode: CBC
+      iv_policy: static
+      padding: Pkcs7
+      plaintext_encoding: json-string
+      key_encoding: utf8
+      iv_encoding: utf8
+    material_source: FRONTEND_HARDCODED
+    material_dynamicity:
+      key: static
+      iv: static
+      nonce: absent
+      timestamp: absent
+      signature: absent
+    validation_hops: single_hop
+    anti_replay: none
+    interlayers: []
+    risk_tags:
+      - BASELINE_STABLE
+    template_level: BASELINE
+
+  - id: rsa_seed
+    algorithm_stack: RSA_ONLY
+    algo_params:
+      key_size: 1024
+      plaintext_encoding: json-string
+    material_source: FRONTEND_HARDCODED
+    material_dynamicity:
+      key: static
+      iv: absent
+      nonce: absent
+      timestamp: absent
+      signature: absent
+    validation_hops: single_hop
+    anti_replay: none
+    interlayers: []
+    risk_tags:
+      - BASELINE_STABLE
+    template_level: BASELINE
+
+  - id: hmac_seed
+    algorithm_stack: PLAINTEXT_HMAC
+    algo_params:
+      plaintext_encoding: json-string
+    material_source: FRONTEND_DERIVED
+    material_dynamicity:
+      key: dynamic
+      iv: absent
+      nonce: dynamic
+      timestamp: dynamic
+      signature: dynamic
+    validation_hops: single_hop
+    anti_replay: nonce_only
+    interlayers:
+      - HEADER_SIGN_LAYER
+    signature_strategy:
+      placement: header
+    session_policy:
+      binding: no_bind
+    risk_tags:
+      - BASELINE_STABLE
+    template_level: BASELINE
+
+rounds:
+  - name: R1
+    max_total_specs: 120
+    max_children_per_parent: 12
+    dimensions:
+      - key_size_variant
+      - source_variant
+      - anti_replay_basic
+
+  - name: R2
+    max_total_specs: 220
+    max_children_per_parent: 18
+    dimensions:
+      - dynamicity_variant
+      - hop_variant
+      - sign_placement
+
+  - name: R3
+    max_total_specs: 320
+    max_children_per_parent: 24
+    dimensions:
+      - interlayer_variant
+      - weak_shift_obfuscation
+      - anti_replay_advanced
+
+dimensions:
+  key_size_variant:
+    variants:
+      - id: aes_128
+        applies_to: [AES_CBC]
+        patch:
+          algo_params:
+            key_size: 128
+      - id: aes_192
+        applies_to: [AES_CBC]
+        patch:
+          algo_params:
+            key_size: 192
+      - id: aes_256
+        applies_to: [AES_CBC]
+        patch:
+          algo_params:
+            key_size: 256
+      - id: rsa_1024
+        applies_to: [RSA_ONLY]
+        patch:
+          algo_params:
+            key_size: 1024
+      - id: rsa_2048
+        applies_to: [RSA_ONLY]
+        patch:
+          algo_params:
+            key_size: 2048
+
+  source_variant:
+    variants:
+      - id: src_hardcoded
+        patch:
+          material_source: FRONTEND_HARDCODED
+      - id: src_derived
+        patch:
+          material_source: FRONTEND_DERIVED
+      - id: src_server_fetch
+        patch:
+          material_source: SERVER_INTERMEDIATE_FETCH
+
+  anti_replay_basic:
+    variants:
+      - id: ar_none
+        patch:
+          anti_replay: none
+      - id: ar_ts
+        patch:
+          anti_replay: timestamp_only
+      - id: ar_nonce
+        patch:
+          anti_replay: nonce_only
+      - id: ar_nonce_ts
+        patch:
+          anti_replay: nonce_timestamp
+
+  dynamicity_variant:
+    variants:
+      - id: dyn_static
+        patch:
+          material_dynamicity:
+            key: static
+            iv: static
+            nonce: absent
+            timestamp: absent
+            signature: absent
+      - id: dyn_semi
+        patch:
+          material_dynamicity:
+            key: dynamic
+            iv: dynamic
+            nonce: dynamic
+            timestamp: dynamic
+            signature: absent
+      - id: dyn_full
+        patch:
+          material_dynamicity:
+            key: dynamic
+            iv: dynamic
+            nonce: dynamic
+            timestamp: dynamic
+            signature: dynamic
+
+  hop_variant:
+    variants:
+      - id: hop_1
+        patch:
+          validation_hops: single_hop
+      - id: hop_2
+        patch:
+          validation_hops: two_hop
+      - id: hop_3
+        patch:
+          validation_hops: three_hop_plus
+
+  sign_placement:
+    variants:
+      - id: sign_body
+        applies_to: [PLAINTEXT_HMAC, AES_CBC]
+        patch:
+          signature_strategy:
+            placement: body
+      - id: sign_header
+        applies_to: [PLAINTEXT_HMAC, AES_CBC]
+        patch:
+          signature_strategy:
+            placement: header
+      - id: sign_query
+        applies_to: [PLAINTEXT_HMAC, AES_CBC]
+        patch:
+          signature_strategy:
+            placement: query
+
+  interlayer_variant:
+    variants:
+      - id: layer_none
+        patch:
+          interlayers: []
+      - id: layer_encoding
+        patch:
+          interlayers: [ENCODING_LAYER]
+      - id: layer_header
+        patch:
+          interlayers: [HEADER_SIGN_LAYER]
+      - id: layer_chain
+        patch:
+          interlayers: [CHAINED_TRANSFORM_LAYER]
+      - id: layer_combo
+        patch:
+          interlayers: [ENCODING_LAYER, CHAINED_TRANSFORM_LAYER]
+
+  weak_shift_obfuscation:
+    variants:
+      - id: weak_none
+        patch:
+          template_level: BASELINE
+      - id: weak_l1_shift
+        patch:
+          template_level: L1
+          weak_obfuscation:
+            kind: key_iv_caesar
+            profile: fixed_shift
+            key_shift: 1
+            iv_shift: 2
+        add_risk_tags: [WEAK_DESIGN, WEAK_KEY_IV_SHIFT]
+      - id: weak_l2_shift
+        patch:
+          template_level: L2
+          weak_obfuscation:
+            kind: key_iv_caesar
+            profile: segmented_shift
+            segment_shifts: [1, 3]
+        add_risk_tags: [WEAK_DESIGN, WEAK_KEY_IV_SHIFT]
+      - id: weak_l3_shift
+        patch:
+          template_level: L3
+          weak_obfuscation:
+            kind: key_iv_caesar
+            profile: pseudo_dynamic_shift
+            source: day_mod_5
+        add_risk_tags: [WEAK_DESIGN, WEAK_KEY_IV_SHIFT]
+
+  anti_replay_advanced:
+    variants:
+      - id: ar_ns
+        patch:
+          anti_replay: nonce_timestamp_signature
+      - id: ar_ns_session
+        patch:
+          anti_replay: nonce_timestamp_signature_session_binding
+          session_policy:
+            binding: bind_cookie
+
+constraints:
+  max_interlayers: 5
+  allowed_algorithms:
+    - DES_CBC
+    - AES_CBC
+    - RSA_ONLY
+    - AES_RSA_ENVELOPE
+    - PLAINTEXT_HMAC
+
+output:
+  spec_dir: lab_specs
+  merged_filename: auto_generated_all_rounds.yaml
+  manifest_filename: auto_generation_manifest.json
+
