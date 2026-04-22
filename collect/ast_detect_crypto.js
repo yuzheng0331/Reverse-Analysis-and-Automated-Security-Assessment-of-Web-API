@@ -176,11 +176,18 @@ function enrichDetailWithInputMetadata(detailTarget, basePath, argPath) {
 
     detailTarget.input_expression = generate(argPath.node).code;
 
+    const inputEncodingInfo = extractCryptoJsParseChain(basePath, argPath.node);
+    if (inputEncodingInfo.chain.length > 0) {
+        detailTarget.input_encoding_chain = inputEncodingInfo.chain;
+        detailTarget.input_encoding = inputEncodingInfo.chain[0];
+        detailTarget.source_encoding = inputEncodingInfo.chain[0];
+    }
+
     const derivation = analyzeDerivationExpression(argPath);
     if (derivation) {
         detailTarget.input_derivation = derivation;
         const sourceKeys = extractSourcesFromDerivation(derivation);
-        if (sourceKeys.length > 0) {
+        if (sourceKeys.length > 0 && !detailTarget.input_source_keys) {
             detailTarget.input_source_keys = sourceKeys;
         }
     }
@@ -541,6 +548,17 @@ function analyzeDerivationExpression(path) {
         }
     }
 
+    // 5. 逻辑运算 (nonce || '')，用于签名拼接的容错表达式
+    if (path.isLogicalExpression()) {
+        const left = analyzeDerivationExpression(path.get('left'));
+        const right = analyzeDerivationExpression(path.get('right'));
+        if (left || right) {
+            const leftOp = left ? left : (resolveConstantFromNode(path.node.left, 0) ? { type: "literal", value: path.node.left.value } : { type: "unknown" });
+            const rightOp = right ? right : (resolveConstantFromNode(path.node.right, 0) ? { type: "literal", value: path.node.right.value } : { type: "unknown" });
+            return { type: "logical_op", op: path.node.operator, left: leftOp, right: rightOp };
+        }
+    }
+
     return null;
 }
 
@@ -664,6 +682,459 @@ function extractObjectKeys(objectExpressionPath) {
     return keys.length > 0 ? keys : null;
 }
 
+function getObjectPropertyByNames(objectNode, names) {
+    if (!objectNode || objectNode.type !== 'ObjectExpression') return null;
+    const lowered = names.map(n => String(n).toLowerCase());
+    for (const prop of objectNode.properties || []) {
+        if (!t.isObjectProperty(prop)) continue;
+        let keyName = null;
+        if (t.isIdentifier(prop.key)) keyName = prop.key.name;
+        else if (t.isStringLiteral(prop.key)) keyName = prop.key.value;
+        if (!keyName) continue;
+        if (lowered.includes(String(keyName).toLowerCase())) return prop;
+    }
+    return null;
+}
+
+function resolveLiteralOrIdentifierString(path, node) {
+    if (!node) return null;
+    if (t.isStringLiteral(node)) return node.value;
+    if (t.isTemplateLiteral(node) && node.quasis.length === 1) return node.quasis[0].value.raw;
+    if (t.isIdentifier(node)) {
+        return resolveVariableValue(path, node.name);
+    }
+    return null;
+}
+
+function extractCryptoJsOptionValue(path, valueNode) {
+    if (!valueNode) return null;
+
+    if (t.isStringLiteral(valueNode)) {
+        return valueNode.value;
+    }
+
+    if (t.isIdentifier(valueNode)) {
+        const init = resolveVariableInitNode(path, valueNode.name);
+        if (init && init.node) {
+            const nested = extractCryptoJsOptionValue(path, init.node);
+            if (nested) return nested;
+        }
+        const resolved = resolveVariableValueWithLoc(path, valueNode.name);
+        if (resolved && typeof resolved.value === 'string') {
+            return resolved.value;
+        }
+        return valueNode.name;
+    }
+
+    if (t.isMemberExpression(valueNode)) {
+        const full = resolveMemberExpression(valueNode);
+        if (!full) return null;
+        if (full.startsWith('CryptoJS.mode.') || full.startsWith('CryptoJS.pad.')) {
+            const parts = full.split('.');
+            return parts[parts.length - 1] || null;
+        }
+        const parts = full.split('.');
+        return parts[parts.length - 1] || full;
+    }
+
+    return null;
+}
+
+function normalizeEncodingName(rawName) {
+    if (!rawName) return null;
+    const text = String(rawName).toLowerCase();
+    if (text.includes('utf8')) return 'utf-8';
+    if (text.includes('hex')) return 'hex';
+    if (text.includes('base64')) return 'base64';
+    if (text.includes('latin1')) return 'latin1';
+    if (text.includes('utf16')) return 'utf-16';
+    return String(rawName);
+}
+
+function extractEncodingFromCallCallee(calleeNode) {
+    const full = resolveMemberExpression(calleeNode);
+    if (!full || !full.endsWith('.parse')) return null;
+    const parseOwner = full.slice(0, -('.parse'.length));
+    if (parseOwner.startsWith('CryptoJS.enc.')) {
+        return normalizeEncodingName(parseOwner.replace('CryptoJS.enc.', ''));
+    }
+    if (parseOwner.endsWith('.enc.Utf8')) return 'utf-8';
+    if (parseOwner.endsWith('.enc.Hex')) return 'hex';
+    if (parseOwner.endsWith('.enc.Base64')) return 'base64';
+    if (parseOwner.endsWith('.enc.Latin1')) return 'latin1';
+    return null;
+}
+
+function resolveIdentifierExpressionNode(path, identifierName, visited = new Set()) {
+    if (!identifierName || visited.has(identifierName)) return null;
+    visited.add(identifierName);
+    const binding = path.scope.getBinding(identifierName);
+    if (!binding) return null;
+
+    if (binding.path.isVariableDeclarator()) {
+        const init = binding.path.get('init');
+        if (init && init.node) {
+            if (t.isIdentifier(init.node)) {
+                return resolveIdentifierExpressionNode(init, init.node.name, visited);
+            }
+            return init.node;
+        }
+    }
+
+    if (binding.constantViolations && binding.constantViolations.length > 0) {
+        for (let i = binding.constantViolations.length - 1; i >= 0; i--) {
+            const violation = binding.constantViolations[i];
+            if (!violation.isAssignmentExpression()) continue;
+            const right = violation.get('right');
+            if (!right || !right.node) continue;
+            if (t.isIdentifier(right.node)) {
+                return resolveIdentifierExpressionNode(right, right.node.name, visited);
+            }
+            return right.node;
+        }
+    }
+    return null;
+}
+
+function extractParseChainFromFunctionCall(path, callNode, visitedIdentifiers, visitedFunctions) {
+    const result = { chain: [] };
+    if (!callNode || !t.isCallExpression(callNode) || !t.isIdentifier(callNode.callee)) return result;
+    const functionName = callNode.callee.name;
+    if (!functionName || visitedFunctions.has(functionName)) return result;
+    visitedFunctions.add(functionName);
+
+    const functionPath = resolveFunctionPath(path, functionName);
+    if (!functionPath) return result;
+
+    functionPath.traverse({
+        ReturnStatement(returnPath) {
+            if (result.chain.length > 0) return;
+            const argumentPath = returnPath.get('argument');
+            if (!argumentPath || !argumentPath.node) return;
+            let targetNode = argumentPath.node;
+            if (t.isIdentifier(targetNode)) {
+                const resolved = resolveIdentifierExpressionNode(returnPath, targetNode.name, new Set(visitedIdentifiers));
+                if (resolved) targetNode = resolved;
+            }
+            const nested = extractCryptoJsParseChain(returnPath, targetNode, new Set(visitedIdentifiers), new Set(visitedFunctions));
+            if (nested.chain.length > 0) {
+                result.chain = nested.chain;
+            }
+        }
+    });
+
+    return result;
+}
+
+function extractCryptoJsParseChain(path, node, visited = new Set(), visitedFunctions = new Set()) {
+    const result = { chain: [] };
+    if (!node) return result;
+
+    if (t.isIdentifier(node)) {
+        if (visited.has(node.name)) return result;
+        visited.add(node.name);
+        const resolvedNode = resolveIdentifierExpressionNode(path, node.name, new Set(visited));
+        if (resolvedNode) {
+            return extractCryptoJsParseChain(path, resolvedNode, visited, visitedFunctions);
+        }
+        return result;
+    }
+
+    if (t.isCallExpression(node)) {
+        const encoding = extractEncodingFromCallCallee(node.callee);
+        if (encoding) {
+            result.chain.push(encoding);
+            if (node.arguments && node.arguments.length > 0) {
+                const nested = extractCryptoJsParseChain(path, node.arguments[0], visited, visitedFunctions);
+                if (nested.chain.length > 0) {
+                    result.chain = result.chain.concat(nested.chain);
+                }
+            }
+            return result;
+        }
+        const fromWrapper = extractParseChainFromFunctionCall(path, node, visited, visitedFunctions);
+        if (fromWrapper.chain.length > 0) {
+            return fromWrapper;
+        }
+    }
+    return result;
+}
+
+function extractOutputEncodingChainFromCode(codeText) {
+    const chain = [];
+    if (!codeText) return chain;
+    const regex = /\.toString\(\s*CryptoJS\.enc\.([A-Za-z0-9_]+)\s*\)/g;
+    let match = null;
+    while ((match = regex.exec(String(codeText))) !== null) {
+        const normalized = normalizeEncodingName(match[1]);
+        if (normalized) chain.push(normalized);
+    }
+    return chain;
+}
+
+function extractOutputEncodingFromToStringCall(path, callNode) {
+    if (!callNode || !t.isCallExpression(callNode)) return null;
+    if (!t.isMemberExpression(callNode.callee)) return null;
+    if (!t.isIdentifier(callNode.callee.property, { name: 'toString' })) return null;
+    if (!Array.isArray(callNode.arguments) || callNode.arguments.length < 1) return null;
+    const raw = extractCryptoJsOptionValue(path, callNode.arguments[0]);
+    if (!raw) return null;
+    return normalizeEncodingName(raw);
+}
+
+function extractApiCallMeta(path, fullCall) {
+    const args = path.node.arguments || [];
+    const loweredCall = String(fullCall || '').toLowerCase();
+
+    // fetch(url, { method, body })
+    if (loweredCall === 'fetch') {
+        const url = args.length > 0 ? resolveLiteralOrIdentifierString(path, args[0]) : null;
+        let method = 'GET';
+        if (args.length > 1 && t.isObjectExpression(args[1])) {
+            const methodProp = getObjectPropertyByNames(args[1], ['method', 'type']);
+            if (methodProp) {
+                const m = resolveLiteralOrIdentifierString(path, methodProp.value);
+                if (m) method = String(m).toUpperCase();
+            }
+        }
+        return { url: url || 'unknown', method, style: 'fetch' };
+    }
+
+    // axios/post/get
+    if (loweredCall.startsWith('axios')) {
+        const url = args.length > 0 ? resolveLiteralOrIdentifierString(path, args[0]) : null;
+        let method = 'POST';
+        if (loweredCall.endsWith('.get')) method = 'GET';
+        if (loweredCall.endsWith('.delete')) method = 'DELETE';
+        if (loweredCall.endsWith('.put')) method = 'PUT';
+        return { url: url || 'unknown', method, style: 'axios' };
+    }
+
+    // $.ajax({ url, type/method, data })
+    if (loweredCall.endsWith('.ajax')) {
+        if (args.length > 0 && t.isObjectExpression(args[0])) {
+            const cfg = args[0];
+            const urlProp = getObjectPropertyByNames(cfg, ['url']);
+            const methodProp = getObjectPropertyByNames(cfg, ['type', 'method']);
+            const url = urlProp ? resolveLiteralOrIdentifierString(path, urlProp.value) : null;
+            const method = methodProp ? (resolveLiteralOrIdentifierString(path, methodProp.value) || 'GET') : 'GET';
+            return { url: url || 'unknown', method: String(method).toUpperCase(), style: 'jquery_ajax' };
+        }
+        const url = args.length > 0 ? resolveLiteralOrIdentifierString(path, args[0]) : null;
+        return { url: url || 'unknown', method: 'GET', style: 'jquery_ajax' };
+    }
+
+    // $.post(url, data), $.get(url, data)
+    if (loweredCall.endsWith('.post') || loweredCall.endsWith('.get')) {
+        const url = args.length > 0 ? resolveLiteralOrIdentifierString(path, args[0]) : null;
+        const method = loweredCall.endsWith('.post') ? 'POST' : 'GET';
+        return { url: url || 'unknown', method, style: 'jquery_short' };
+    }
+
+    // Generic fallback for raw XMLHttpRequest/new API wrappers
+    if (loweredCall === 'xmlhttprequest') {
+        return { url: 'unknown', method: 'UNKNOWN', style: 'xhr' };
+    }
+
+    return null;
+}
+
+const SIGN_FIELD_CANDIDATES = new Set(['signature', 'sign', 'sig', 'token', 'mac', 'hmac']);
+const SIGN_HEADER_CANDIDATES = new Set(['x-signature', 'x-sign', 'signature', 'sign', 'sig']);
+
+function _isSignLikeName(name) {
+    const lowered = String(name || '').trim().toLowerCase();
+    return SIGN_FIELD_CANDIDATES.has(lowered) || SIGN_HEADER_CANDIDATES.has(lowered);
+}
+
+function _getObjectPropertyName(prop) {
+    if (!prop || !t.isObjectProperty(prop)) return null;
+    if (t.isIdentifier(prop.key)) return prop.key.name;
+    if (t.isStringLiteral(prop.key)) return prop.key.value;
+    return null;
+}
+
+function _collectSignFieldsFromObjectExpression(objectNode, targetSet) {
+    if (!objectNode || !t.isObjectExpression(objectNode)) return;
+    for (const prop of objectNode.properties || []) {
+        const keyName = _getObjectPropertyName(prop);
+        if (keyName && _isSignLikeName(keyName)) {
+            targetSet.add(String(keyName));
+        }
+    }
+}
+
+function _collectSignFieldsFromUrlSearchParams(path, valueNode, targetSet) {
+    if (!valueNode || !t.isCallExpression(valueNode)) return;
+    if (!t.isMemberExpression(valueNode.callee)) return;
+    if (!t.isIdentifier(valueNode.callee.property, { name: 'toString' })) return;
+    const objectRef = valueNode.callee.object;
+    if (!t.isIdentifier(objectRef)) return;
+
+    const binding = path.scope.getBinding(objectRef.name);
+    if (!binding) return;
+    for (const refPath of binding.referencePaths || []) {
+        const parent = refPath.parentPath;
+        if (!parent || !parent.isMemberExpression()) continue;
+        if (!t.isIdentifier(parent.node.property, { name: 'append' })) continue;
+        const callPath = parent.parentPath;
+        if (!callPath || !callPath.isCallExpression()) continue;
+        const appendArgs = callPath.node.arguments || [];
+        if (appendArgs.length < 1) continue;
+        const keyValue = resolveLiteralOrIdentifierString(callPath, appendArgs[0]);
+        if (_isSignLikeName(keyValue)) {
+            targetSet.add(String(keyValue));
+        }
+    }
+}
+
+function _collectSignatureSignalsFromApiCalls(path) {
+    const functionPath = path.getFunctionParent();
+    if (!functionPath) {
+        return {
+            placement: null,
+            signature_field: null,
+            signature_header_name: null,
+            signature_query_param: null,
+        };
+    }
+
+    const placementVotes = { header: 0, body: 0, query: 0 };
+    const bodyFields = new Set();
+    const headerFields = new Set();
+    const queryFields = new Set();
+
+    functionPath.traverse({
+        CallExpression(innerPath) {
+            const fullCall = resolveMemberExpression(innerPath.node.callee);
+            if (!fullCall) return;
+            const loweredCall = String(fullCall).toLowerCase();
+            const args = innerPath.node.arguments || [];
+
+            const markQueryByUrl = (urlNode) => {
+                const resolvedUrl = resolveLiteralOrIdentifierString(innerPath, urlNode);
+                if (!resolvedUrl) return;
+                const text = String(resolvedUrl);
+                const regex = /[?&](signature|sign|sig|token|mac|hmac)=/ig;
+                let match = null;
+                while ((match = regex.exec(text)) !== null) {
+                    placementVotes.query += 1;
+                    queryFields.add(String(match[1]));
+                }
+            };
+
+            const markHeadersAndBodyByConfig = (configNode) => {
+                if (!configNode || !t.isObjectExpression(configNode)) return;
+                const headersProp = getObjectPropertyByNames(configNode, ['headers']);
+                if (headersProp && t.isObjectExpression(headersProp.value)) {
+                    const beforeCount = headerFields.size;
+                    _collectSignFieldsFromObjectExpression(headersProp.value, headerFields);
+                    if (headerFields.size > beforeCount) placementVotes.header += 1;
+                }
+
+                const dataProp = getObjectPropertyByNames(configNode, ['data', 'body', 'params']);
+                if (dataProp) {
+                    if (t.isObjectExpression(dataProp.value)) {
+                        const beforeCount = bodyFields.size;
+                        _collectSignFieldsFromObjectExpression(dataProp.value, bodyFields);
+                        if (bodyFields.size > beforeCount) placementVotes.body += 1;
+                    } else if (t.isCallExpression(dataProp.value)) {
+                        const beforeCount = bodyFields.size;
+                        _collectSignFieldsFromUrlSearchParams(innerPath, dataProp.value, bodyFields);
+                        if (bodyFields.size > beforeCount) placementVotes.body += 1;
+                    }
+                }
+            };
+
+            if (loweredCall === 'fetch') {
+                if (args.length > 0) markQueryByUrl(args[0]);
+                if (args.length > 1) markHeadersAndBodyByConfig(args[1]);
+                return;
+            }
+
+            if (loweredCall.startsWith('axios')) {
+                if (args.length > 0) markQueryByUrl(args[0]);
+                if (loweredCall.endsWith('.get') || loweredCall.endsWith('.delete')) {
+                    if (args.length > 1) markHeadersAndBodyByConfig(args[1]);
+                } else {
+                    if (args.length > 1 && t.isObjectExpression(args[1])) {
+                        const beforeCount = bodyFields.size;
+                        _collectSignFieldsFromObjectExpression(args[1], bodyFields);
+                        if (bodyFields.size > beforeCount) placementVotes.body += 1;
+                    }
+                    if (args.length > 2) markHeadersAndBodyByConfig(args[2]);
+                }
+                return;
+            }
+
+            if (loweredCall.endsWith('.ajax')) {
+                if (args.length > 0 && t.isObjectExpression(args[0])) {
+                    const cfg = args[0];
+                    const urlProp = getObjectPropertyByNames(cfg, ['url']);
+                    if (urlProp) markQueryByUrl(urlProp.value);
+                    markHeadersAndBodyByConfig(cfg);
+                }
+                return;
+            }
+
+            if (loweredCall.endsWith('.post') || loweredCall.endsWith('.get')) {
+                if (args.length > 0) markQueryByUrl(args[0]);
+                if (args.length > 1 && t.isObjectExpression(args[1])) {
+                    const beforeCount = bodyFields.size;
+                    _collectSignFieldsFromObjectExpression(args[1], bodyFields);
+                    if (bodyFields.size > beforeCount) placementVotes.body += 1;
+                }
+            }
+        }
+    });
+
+    let placement = null;
+    const ranked = Object.entries(placementVotes).sort((a, b) => b[1] - a[1]);
+    if (ranked.length > 0 && ranked[0][1] > 0) {
+        placement = ranked[0][0];
+    }
+
+    return {
+        placement,
+        signature_field: bodyFields.size > 0 ? Array.from(bodyFields)[0] : null,
+        signature_header_name: headerFields.size > 0 ? Array.from(headerFields)[0] : null,
+        signature_query_param: queryFields.size > 0 ? Array.from(queryFields)[0] : null,
+    };
+}
+
+function _buildSignInputRuleMetadata(opDetail) {
+    const inputExpr = String(opDetail.input_expression || '').trim();
+    const derivation = opDetail.input_derivation;
+    const parts = [];
+    if (derivation) {
+        const sourceKeys = extractSourcesFromDerivation(derivation) || [];
+        sourceKeys.forEach((item) => parts.push(String(item)));
+    }
+
+    if (parts.length === 0 && inputExpr) {
+        const idMatches = inputExpr.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [];
+        const skip = new Set(['JSON', 'stringify', 'CryptoJS', 'enc', 'Utf8', 'Hex', 'Base64', 'parse']);
+        for (const token of idMatches) {
+            if (!skip.has(token)) parts.push(token);
+        }
+    }
+
+    const uniqueParts = Array.from(new Set(parts));
+    const canonicalization = [];
+    if (inputExpr.includes('JSON.stringify(')) canonicalization.push('json_stringify');
+    if (inputExpr.includes('+')) canonicalization.push('concat');
+    if (derivation && String(derivation.type || '') === 'logical_op') canonicalization.push('logical_fallback');
+
+    if (!inputExpr && uniqueParts.length === 0) {
+        return null;
+    }
+    return {
+        sign_input_rule: inputExpr || null,
+        sign_input_parts: uniqueParts,
+        sign_input_canonicalization: canonicalization,
+    };
+}
+
 // Configure CLI
 const { program } = require('commander');
 
@@ -726,6 +1197,75 @@ const functions = []; // New: Collect Function Info
 // 提取 HTTP Body 构造逻辑
 function detectPayloadPacking(path, contextName) {
     const args = path.node.arguments;
+
+    // jQuery $.ajax({ url, data, ... })
+    if (contextName.toLowerCase().endsWith('.ajax') && args.length >= 1 && args[0].type === 'ObjectExpression') {
+        const dataProp = getObjectPropertyByNames(args[0], ['data']);
+        if (!dataProp) return null;
+
+        let bodyNode = dataProp.value;
+        if (bodyNode.type === 'Identifier') {
+            const resolved = resolveVariableInitNode(path, bodyNode.name);
+            if (resolved && resolved.node) {
+                bodyNode = resolved.node;
+            }
+        }
+
+        if (bodyNode.type === 'ObjectExpression') {
+            const data = {};
+            const derivations = {};
+            const fieldSources = {};
+            bodyNode.properties.forEach(p => {
+                if (p.type === 'ObjectProperty') {
+                    const key = p.key.name || p.key.value;
+                    const sourceInfo = buildPackingFieldSource(path, p.value);
+                    fieldSources[key] = sourceInfo;
+                    let val = sourceInfo.source_name || 'unknown';
+                    if (sourceInfo.source_type === 'literal') {
+                        val = sourceInfo.literal_value;
+                    }
+                    if (sourceInfo.derivation && typeof val === 'string') {
+                        derivations[val] = sourceInfo.derivation;
+                    }
+                    data[key] = val;
+                }
+            });
+            return { type: 'jquery_ajax_data', structure: data, value_derivations: derivations, field_sources: fieldSources };
+        }
+    }
+
+    // jQuery $.post(url, data, cb) / $.get(url, data, cb)
+    if ((contextName.toLowerCase().endsWith('.post') || contextName.toLowerCase().endsWith('.get')) && args.length >= 2) {
+        let bodyNode = args[1];
+        if (bodyNode.type === 'Identifier') {
+            const resolved = resolveVariableInitNode(path, bodyNode.name);
+            if (resolved && resolved.node) {
+                bodyNode = resolved.node;
+            }
+        }
+        if (bodyNode.type === 'ObjectExpression') {
+            const data = {};
+            const derivations = {};
+            const fieldSources = {};
+            bodyNode.properties.forEach(p => {
+                if (p.type === 'ObjectProperty') {
+                    const key = p.key.name || p.key.value;
+                    const sourceInfo = buildPackingFieldSource(path, p.value);
+                    fieldSources[key] = sourceInfo;
+                    let val = sourceInfo.source_name || 'unknown';
+                    if (sourceInfo.source_type === 'literal') {
+                        val = sourceInfo.literal_value;
+                    }
+                    if (sourceInfo.derivation && typeof val === 'string') {
+                        derivations[val] = sourceInfo.derivation;
+                    }
+                    data[key] = val;
+                }
+            });
+            return { type: 'jquery_short_data', structure: data, value_derivations: derivations, field_sources: fieldSources };
+        }
+    }
+
     if (args.length < 2) return null;
 
     let bodyNode = null;
@@ -896,16 +1436,20 @@ traverse(ast, {
               const fullCall = resolveMemberExpression(callee);
 
               // Detect API Calls (fetch, axios, ajax)
-              if (fullCall === 'fetch' || fullCall.startsWith('axios') || fullCall.includes('ajax') || fullCall === 'XMLHttpRequest') {
-                   // Try to get URL argument
-                   let urlArg = "unknown";
-                   if (innerPath.node.arguments.length > 0) {
-                       const arg0 = innerPath.node.arguments[0];
-                       if (arg0.type === 'StringLiteral') {
-                           urlArg = arg0.value;
-                       }
+              if (
+                  fullCall === 'fetch' ||
+                  fullCall.startsWith('axios') ||
+                  fullCall.includes('ajax') ||
+                  fullCall.endsWith('.post') ||
+                  fullCall.endsWith('.get') ||
+                  fullCall === 'XMLHttpRequest'
+              ) {
+                   const apiMeta = extractApiCallMeta(innerPath, fullCall);
+                   if (apiMeta && apiMeta.url) {
+                       apiCalls.push(apiMeta.url);
+                   } else {
+                       apiCalls.push('unknown');
                    }
-                   apiCalls.push(urlArg);
 
                    // NEW: Detect Payload Packing (how data is put into body)
                    const packInfo = detectPayloadPacking(innerPath, fullCall);
@@ -1070,6 +1614,8 @@ traverse(ast, {
          const details = [];
          const args = path.node.arguments;
          const outputVar = getOutputVariable(path);
+         let extractedMode = null;
+         let extractedPadding = null;
          const wrappedCryptoCall = t.isMemberExpression(path.node.callee) &&
              t.isIdentifier(path.node.callee.property, { name: 'toString' }) &&
              t.isCallExpression(path.node.callee.object)
@@ -1079,6 +1625,10 @@ traverse(ast, {
          const dataArgPath = wrappedCryptoCall ? path.get('callee.object.arguments.0') : path.get('arguments.0');
          const keyArgPath = wrappedCryptoCall ? path.get('callee.object.arguments.1') : path.get('arguments.1');
          const outputTransform = wrappedCryptoCall ? generate(path.node).code : null;
+         const inputParseInfo = dataArgPath && dataArgPath.node ? extractCryptoJsParseChain(path, dataArgPath.node) : { chain: [] };
+          let keyEncoding = null;
+          let ivEncoding = null;
+         let preferredInputKeys = null;
 
          // 如果是加密/签名/哈希操作，尝试提取更详细的上下文 (Key/IV/Payload)
          if (['encrypt', 'decrypt', 'sign', 'hash'].includes(operation)) {
@@ -1099,6 +1649,9 @@ traverse(ast, {
                      const defLine = resolveVariableLine(path, node.name);
 
                      if (schema) {
+                          if (!preferredInputKeys && Array.isArray(schema) && schema.length > 0) {
+                              preferredInputKeys = schema;
+                          }
                          details.push({
                              operation: "DataStructure",
                              line: defLine > 0 ? defLine : path.node.loc.start.line,
@@ -1115,6 +1668,10 @@ traverse(ast, {
                  let resolvedKey = null;
                  let keyContext = "";
                  let definitionLine = 0;
+                  const keyEncodingInfo = extractCryptoJsParseChain(path, keyNode);
+                  if (keyEncodingInfo.chain.length > 0) {
+                      keyEncoding = keyEncodingInfo.chain[0];
+                  }
 
                  if (t.isStringLiteral(keyNode)) {
                      resolvedKey = keyNode.value;
@@ -1155,12 +1712,48 @@ traverse(ast, {
              }
 
              // 3. Options (IV) Analysis
-             if (cryptoArgs.length > 2 && t.isObjectExpression(cryptoArgs[2])) {
-                 cryptoArgs[2].properties.forEach(prop => {
+             // 支持第三参为对象字面量或变量引用（例如 const options = { iv: ... }; encrypt(..., options)）。
+             let optionsNode = null;
+             let optionsAnalysisPath = path;
+             if (cryptoArgs.length > 2) {
+                 if (t.isObjectExpression(cryptoArgs[2])) {
+                     optionsNode = cryptoArgs[2];
+                 } else if (t.isIdentifier(cryptoArgs[2])) {
+                     const resolved = resolveObjectExpressionFromIdentifier(path, cryptoArgs[2].name);
+                     if (resolved && resolved.node && t.isObjectExpression(resolved.node)) {
+                         optionsNode = resolved.node;
+                         optionsAnalysisPath = resolved.analysisPath || path;
+                     }
+                 }
+             }
+             if (optionsNode) {
+                 optionsNode.properties.forEach(prop => {
+                      if (!t.isObjectProperty(prop) || !t.isIdentifier(prop.key)) {
+                          return;
+                      }
+
+                      if (prop.key.name === 'mode') {
+                          const modeValue = extractCryptoJsOptionValue(optionsAnalysisPath, prop.value);
+                          if (modeValue) {
+                              extractedMode = modeValue;
+                          }
+                      }
+
+                      if (prop.key.name === 'padding') {
+                          const paddingValue = extractCryptoJsOptionValue(optionsAnalysisPath, prop.value);
+                          if (paddingValue) {
+                              extractedPadding = paddingValue;
+                          }
+                      }
+
                      if (t.isObjectProperty(prop) && t.isIdentifier(prop.key) && prop.key.name === 'iv') {
                          let resolvedIv = null;
                          let ivContext = "";
                          let definitionLine = 0;
+                           const ivEncodingInfo = extractCryptoJsParseChain(optionsAnalysisPath, prop.value);
+                          if (ivEncodingInfo.chain.length > 0) {
+                              ivEncoding = ivEncodingInfo.chain[0];
+                          }
 
                          if (t.isStringLiteral(prop.value)) {
                              resolvedIv = prop.value.value;
@@ -1168,16 +1761,16 @@ traverse(ast, {
                              definitionLine = prop.loc.start.line;
                          } else if (t.isIdentifier(prop.value)) {
                              ivContext = `Variable: ${prop.value.name}`;
-                             const res = resolveVariableValueWithLoc(path, prop.value.name);
+                              const res = resolveVariableValueWithLoc(optionsAnalysisPath, prop.value.name);
                              if (res) {
                                  resolvedIv = res.value;
                                  definitionLine = res.line;
                                  ivContext += ` (Resolved: "${resolvedIv}")`;
                              } else {
                                  // 尝试追踪衍生逻辑 (IV)
-                                 const derivation = traceVariableDerivation(path, prop.value.name);
+                                  const derivation = traceVariableDerivation(optionsAnalysisPath, prop.value.name);
                                  if (derivation) {
-                                     definitionLine = resolveVariableLine(path, prop.value.name);
+                                      definitionLine = resolveVariableLine(optionsAnalysisPath, prop.value.name);
                                      ivContext += ` (Derived)`;
                                      details.push({
                                          operation: "derive_iv",
@@ -1189,7 +1782,7 @@ traverse(ast, {
                                      definitionLine = prop.loc.start.line;
                                  }
                              }
-                         }
+                           }
 
                          if (resolvedIv) {
                              details.push({
@@ -1214,8 +1807,66 @@ traverse(ast, {
          if (outputTransform) {
             opDetail.output_transform = outputTransform;
          }
+          if (Array.isArray(preferredInputKeys) && preferredInputKeys.length > 0 && !opDetail.input_source_keys) {
+             opDetail.input_source_keys = preferredInputKeys;
+          }
+          if (inputParseInfo.chain.length > 0) {
+             opDetail.input_encoding_chain = inputParseInfo.chain;
+             opDetail.input_encoding = inputParseInfo.chain[0];
+             opDetail.source_encoding = inputParseInfo.chain[0];
+          }
+          const outputEncodingChain = extractOutputEncodingChainFromCode(outputTransform || '');
+          const outputEncodingFromToString = extractOutputEncodingFromToStringCall(path, path.node);
+          if (outputEncodingFromToString && !outputEncodingChain.includes(outputEncodingFromToString)) {
+             outputEncodingChain.push(outputEncodingFromToString);
+          }
+          if (outputEncodingChain.length > 0) {
+             opDetail.output_encoding_chain = outputEncodingChain;
+             opDetail.output_encoding = outputEncodingChain[outputEncodingChain.length - 1];
+          }
+          if (keyEncoding) {
+             opDetail.key_encoding = keyEncoding;
+          }
+          if (ivEncoding) {
+             opDetail.iv_encoding = ivEncoding;
+          }
          if (dataArgPath && dataArgPath.node) {
             enrichDetailWithInputMetadata(opDetail, path, dataArgPath);
+         }
+         if (operation === 'sign') {
+            const signatureSignals = _collectSignatureSignalsFromApiCalls(path);
+            if (signatureSignals.placement) {
+                opDetail.placement = signatureSignals.placement;
+                opDetail.signature_placement = signatureSignals.placement;
+            }
+            if (signatureSignals.signature_field) {
+                opDetail.signature_field = signatureSignals.signature_field;
+            }
+            if (signatureSignals.signature_header_name) {
+                opDetail.signature_header_name = signatureSignals.signature_header_name;
+            }
+            if (signatureSignals.signature_query_param) {
+                opDetail.signature_query_param = signatureSignals.signature_query_param;
+            }
+
+            const signInputMetadata = _buildSignInputRuleMetadata(opDetail);
+            if (signInputMetadata) {
+                if (signInputMetadata.sign_input_rule) {
+                    opDetail.sign_input_rule = signInputMetadata.sign_input_rule;
+                }
+                if (Array.isArray(signInputMetadata.sign_input_parts) && signInputMetadata.sign_input_parts.length > 0) {
+                    opDetail.sign_input_parts = signInputMetadata.sign_input_parts;
+                }
+                if (Array.isArray(signInputMetadata.sign_input_canonicalization) && signInputMetadata.sign_input_canonicalization.length > 0) {
+                    opDetail.sign_input_canonicalization = signInputMetadata.sign_input_canonicalization;
+                }
+            }
+         }
+         if (extractedMode) {
+            opDetail.mode = extractedMode;
+         }
+         if (extractedPadding) {
+            opDetail.padding = extractedPadding;
          }
          details.push(opDetail);
 
@@ -1379,8 +2030,17 @@ traverse(ast, {
       const key = path.node.key;
       const value = path.node.value;
 
-      if ((key.name || key.value) && (value.type === 'StringLiteral')) {
-           const name = (key.name || key.value).toLowerCase();
+      let rawName = null;
+      if (t.isIdentifier(key)) {
+          rawName = key.name;
+      } else if (t.isStringLiteral(key)) {
+          rawName = key.value;
+      } else if (t.isNumericLiteral(key)) {
+          rawName = String(key.value);
+      }
+
+      if (rawName !== null && (value.type === 'StringLiteral')) {
+           const name = String(rawName).toLowerCase();
            const valStr = value.value;
 
            if (/(key|secret|password|passwd|iv|salt|token)/.test(name)) {
@@ -1392,7 +2052,7 @@ traverse(ast, {
                       weakness: 'HARDCODED_KEY',
                       line: path.node.loc ? path.node.loc.start.line : 0,
                       function: getFunctionName(path),
-                      code: `${key.name || key.value}: "${valStr.substring(0, 5)}..."`
+                      code: `${rawName}: "${valStr.substring(0, 5)}..."`
                   });
               }
           }

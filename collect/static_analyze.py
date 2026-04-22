@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -114,7 +114,12 @@ class StaticAnalyzer:
     整合了原 fetch_js + parse_js + detect_crypto 的功能。
     """
 
-    def __init__(self, output_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        output_dir: Optional[Path] = None,
+        default_blacklist_enabled: bool = True,
+        extra_blacklist_patterns: Optional[list[str]] = None,
+    ):
         # Ensure defaults are created relative to this script's directory (collect/)
         script_dir = Path(__file__).resolve().parent
 
@@ -138,8 +143,36 @@ class StaticAnalyzer:
         })
 
         self.result: Optional[StaticAnalysisResult] = None
+        self.default_blacklist_enabled = default_blacklist_enabled
+        self.extra_blacklist_patterns = [p.lower() for p in (extra_blacklist_patterns or []) if p]
+        # 运行期索引：用于把 JS 事件绑定回填到 form_action 端点
+        self._form_bind_index: list[dict] = []
+        self._submit_event_bindings: list[dict] = []
 
-    def analyze(self, target_url: str) -> StaticAnalysisResult:
+    def _default_third_party_patterns(self) -> list[str]:
+        """常见第三方库关键字，用于降低噪声。"""
+        return [
+            "jquery", "jquery-ui", "bootstrap", "chart", "moment", "daterangepicker",
+            "tempusdominus", "summernote", "overlay", "adminlte", "select2", "qrcode",
+            "sparkline", "jqgrid", "ztree", "vue.min", "react", "angular", "chunk-vendors",
+            "vendor", "vendors", "prism", "layer.js", "jsencrypt", "zxcvbn.min", "zxcvbn-async.min",
+        ]
+
+    def _is_blacklisted_script(self, script_url: Optional[str], filename: str) -> bool:
+        """按 URL/文件名做黑名单过滤。"""
+        target = f"{(script_url or '')} {filename}".lower()
+        patterns = []
+        if self.default_blacklist_enabled:
+            patterns.extend(self._default_third_party_patterns())
+        patterns.extend(self.extra_blacklist_patterns)
+        return any(p and p in target for p in patterns)
+
+    def analyze(
+        self,
+        target_url: str,
+        html_override: Optional[str] = None,
+        manual_js_files: Optional[list[Path]] = None,
+    ) -> StaticAnalysisResult:
         """
         执行完整的静态分析。
 
@@ -155,12 +188,19 @@ class StaticAnalyzer:
             target_url=target_url,
             analyzed_at=datetime.now(timezone.utc).isoformat()
         )
+        self._form_bind_index = []
+        self._submit_event_bindings = []
 
-        # Step 1: 获取页面
-        console.print("[cyan]1. 获取页面内容...[/cyan]")
-        html = self._fetch_page(target_url)
-        if not html:
-            return self.result
+        # Step 1: 获取页面（或使用离线 HTML）
+        if html_override is not None:
+            console.print("[cyan]1. 使用离线 HTML 输入...[/cyan]")
+            html = html_override
+            console.print(f"  [green][OK][/green] 离线 HTML 已加载: {len(html.encode('utf-8'))} bytes")
+        else:
+            console.print("[cyan]1. 获取页面内容...[/cyan]")
+            html = self._fetch_page(target_url)
+            if not html:
+                return self.result
 
         # Step 2: 提取端点
         console.print("[cyan]2. 提取 API 端点...[/cyan]")
@@ -168,7 +208,13 @@ class StaticAnalyzer:
 
         # Step 3: 收集并分析 JS
         console.print("[cyan]3. 收集并分析 JavaScript...[/cyan]")
-        self._collect_and_analyze_js(html, target_url)
+        self._collect_and_analyze_js(html, target_url, manual_js_files=manual_js_files)
+
+        # Step 3.1: 合并 JS 中识别出的端点（如 $.ajax/fetch）
+        self._merge_js_discovered_endpoints(target_url)
+
+        # Step 3.2: 将 JS submit 事件绑定映射回 form_action 端点
+        self._apply_submit_bindings_to_forms()
 
         # Step 4: 建立映射关系
         console.print("[cyan]4. 建立端点-加密映射...[/cyan]")
@@ -213,22 +259,89 @@ class StaticAnalyzer:
         for form in soup.find_all("form"):
             action = form.get("action")
             if action and self._is_api_endpoint(action):
+                onsubmit = form.get("onsubmit", "")
+                endpoint_url = urljoin(base_url, action)
+                classes = [c for c in (form.get("class") or []) if isinstance(c, str)]
+                selectors = ["form"]
+                if form.get("id"):
+                    selectors.append(f"#{form.get('id')}")
+                if form.get("name"):
+                    selectors.append(f"form[name=\"{form.get('name')}\"]")
+                for cls in classes:
+                    selectors.append(f"form.{cls}")
+
                 self.result.endpoints.append(Endpoint(
-                    url=urljoin(base_url, action),
+                    url=endpoint_url,
                     method=form.get("method", "GET").upper(),
-                    source="form_action"
+                    source="form_action",
+                    trigger_function=self._extract_handler_function(onsubmit)
                 ))
+
+                self._form_bind_index.append({
+                    "url": endpoint_url,
+                    "id": form.get("id") or "",
+                    "name": form.get("name") or "",
+                    "classes": classes,
+                    "selectors": selectors,
+                })
 
         console.print(f"  [green][OK][/green] 发现 {len(self.result.endpoints)} 个端点")
 
-    def _is_api_endpoint(self, url: str) -> bool:
-        """判断是否为 API 端点"""
-        if not url or url.startswith("#") or url.startswith("javascript:"):
-            return False
-        api_indicators = ['.php', '.asp', '.jsp', '/api/', '/v1/', '/encrypt/', '/sign/']
-        return any(ind in url.lower() for ind in api_indicators)
+    def _extract_handler_function(self, handler_code: str) -> str:
+        """从 onsubmit/onclick 这类内联处理器中提取函数名。"""
+        if not handler_code:
+            return ""
+        # 兼容 return check(); / check(); / return foo.bar();
+        match = re.search(r"(?:return\s+)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*\(", handler_code)
+        return match.group(1) if match else ""
 
-    def _collect_and_analyze_js(self, html: str, base_url: str):
+    def _is_api_endpoint(self, url: str) -> bool:
+        """判断是否为 API 端点（通用规则，避免站点特化）。"""
+        if not url:
+            return False
+        raw = url.strip()
+        if not raw:
+            return False
+
+        lower = raw.lower()
+        if lower.startswith(("#", "javascript:", "mailto:", "tel:", "data:", "blob:")):
+            return False
+
+        parsed = urlparse(raw)
+        path = (parsed.path or "").strip().lower()
+        query = (parsed.query or "").strip()
+
+        # 常见动态端点指示器（补充 .me 以覆盖传统站点路由）
+        dynamic_markers = (".php", ".asp", ".aspx", ".jsp", ".do", ".action", ".me", "/api/", "/v1/", "/v2/")
+        if any(m in lower for m in dynamic_markers):
+            return True
+
+        # 显式排除静态资源（不记录 img/src/css/js/font）
+        static_exts = (
+            ".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".bmp", ".webp",
+            ".woff", ".woff2", ".ttf", ".otf", ".eot", ".map", ".pdf", ".txt", ".xml"
+        )
+        if path.endswith(static_exts):
+            return False
+
+        # 带 query 的动态路由通常是接口（如 /validateCode?series=1）
+        if query and path:
+            return True
+
+        # 支持无后缀 REST/登录路由（如 /jsp/login）
+        if path and path != "/":
+            last_segment = path.rsplit("/", 1)[-1]
+            if last_segment and "." not in last_segment:
+                return True
+
+        # 兜底：登录/认证类路由关键词（含相对路径 form action）
+        auth_markers = ("login", "signin", "auth", "token", "session")
+        if path and any(m in path for m in auth_markers):
+            return True
+
+        return False
+
+    def _collect_and_analyze_js(self, html: str, base_url: str, manual_js_files: Optional[list[Path]] = None):
         """收集并分析 JS"""
         soup = BeautifulSoup(html, "html.parser")
 
@@ -246,10 +359,15 @@ class StaticAnalyzer:
                 js_url = urljoin(base_url, src)
                 content = self._download_js(js_url)
                 if not content:
+                   console.print(f"  [yellow]- Skip download failed:[/yellow] idx={idx}, src={src}")
                    continue
                 filename = Path(src).name
                 if not filename.endswith('.js'):
                     filename = f"script_{idx}.js"
+
+                if self._is_blacklisted_script(js_url, filename):
+                    console.print(f"  [yellow]- Skip third-party:[/yellow] {filename}")
+                    continue
             else:
                 # 内联脚本
                 content = script.string or ""
@@ -257,46 +375,346 @@ class StaticAnalyzer:
                     continue
                 filename = f"inline_{idx}.js"
 
-            # 去重
-            if content in processed_contents:
+            self._analyze_single_js_content(
+                content=content,
+                filename=filename,
+                source_type="external" if src else "inline",
+                source_url=js_url,
+                processed_contents=processed_contents,
+            )
+
+        # 手工补充 JS（用于动态加载脚本无法直接从 HTML script 标签获得的场景）
+        for js_path in manual_js_files or []:
+            try:
+                manual_content = js_path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                manual_content = js_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception as e:
+                console.print(f"  [yellow]![/yellow] 读取手工 JS 失败 {js_path}: {e}")
                 continue
-            processed_contents.add(content)
 
-            # Save raw content
-            raw_path = self.raw_js_dir / filename
-            counter = 1
-            while raw_path.exists():
-                raw_path = self.raw_js_dir / f"{raw_path.stem}_{counter}{raw_path.suffix}"
-                counter += 1
-
-            with open(raw_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-
-            # Deobfuscate/Normalize
-            console.print(f"  [cyan]Normalize:[/cyan] {filename}")
-            normalized_path = self.normalized_js_dir / raw_path.name
-            normalized_content = self._run_deobfuscator(raw_path, normalized_path)
-
-            target_path = normalized_path if normalized_content else raw_path
-            final_content = normalized_content if normalized_content else content
-
-            # Run AST Detection
-            console.print(f"  [cyan]AST Detect:[/cyan] {target_path.name}")
-            # Run AST detector on the normalized (deobfuscated/formatted) file so report line numbers map to normalized
-            ast_findings = self._run_ast_detector(target_path)
-
-            if ast_findings:
-                self._process_ast_findings(ast_findings, final_content, target_path.name)
-
-
-            self.result.collected_files.append({
-                "type": "external" if src else "inline",
-                "url": js_url,
-                "file_path": str(target_path),
-                "size": len(final_content)
-            })
+            self._analyze_single_js_content(
+                content=manual_content,
+                filename=js_path.name,
+                source_type="manual",
+                source_url=str(js_path),
+                processed_contents=processed_contents,
+            )
 
         console.print(f"  [green][OK][/green] 分析了 {len(self.result.collected_files)} 个脚本")
+
+    def _analyze_single_js_content(
+        self,
+        content: str,
+        filename: str,
+        source_type: str,
+        source_url: Optional[str],
+        processed_contents: set,
+    ):
+        """统一处理单个 JS 文本：落盘、格式化、AST 识别、结果登记。"""
+        if not content or not content.strip():
+            return
+
+        if content in processed_contents:
+            console.print(f"  [yellow]- Skip duplicate content:[/yellow] {filename}")
+            return
+        processed_contents.add(content)
+
+        raw_path = self.raw_js_dir / filename
+        counter = 1
+        while raw_path.exists():
+            raw_path = self.raw_js_dir / f"{raw_path.stem}_{counter}{raw_path.suffix}"
+            counter += 1
+
+        with open(raw_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        console.print(f"  [cyan]Normalize:[/cyan] {filename}")
+        normalized_path = self.normalized_js_dir / raw_path.name
+        normalized_content = self._run_deobfuscator(raw_path, normalized_path)
+
+        target_path = normalized_path if normalized_content else raw_path
+        final_content = normalized_content if normalized_content else content
+
+        console.print(f"  [cyan]AST Detect:[/cyan] {target_path.name}")
+        ast_findings = self._run_ast_detector(target_path)
+        if ast_findings:
+            self._process_ast_findings(ast_findings, final_content, target_path.name)
+
+        # 补充识别：前端口令预哈希链（如 SHA256(SHA256(pwd)+username)）
+        self._detect_password_prehash_patterns(final_content, target_path.name)
+
+        # 额外识别 submit 事件绑定（jQuery + 原生 addEventListener）
+        self._scan_submit_event_bindings(final_content, target_path.name)
+
+        self.result.collected_files.append({
+            "type": source_type,
+            "url": source_url,
+            "file_path": str(target_path),
+            "size": len(final_content)
+        })
+
+    def _scan_submit_event_bindings(self, js_content: str, filename: str):
+        """识别常见 submit 事件绑定写法，提取 selector 与 handler。"""
+        # 兼容 jQuery 别名：$, jQuery, 以及常见短别名（例如 ready(function(e){ e(...) })）
+        jq_callee = r"(?:\$|jQuery|[A-Za-z_$][\w$]*)"
+
+        # jQuery: $(selector).submit(handler)
+        self._collect_binding_matches(
+            js_content,
+            filename,
+            rf"{jq_callee}\s*\(\s*(?P<selector>[^\)]*?)\s*\)\s*\.submit\s*\(\s*(?P<handler>[^\)]*?)\s*\)",
+            "jquery_submit",
+        )
+
+        # jQuery: $(selector).on('submit', handler) / .bind('submit', handler)
+        self._collect_binding_matches(
+            js_content,
+            filename,
+            rf"{jq_callee}\s*\(\s*(?P<selector>[^\)]*?)\s*\)\s*\.(?:on|bind)\s*\(\s*['\"]submit['\"]\s*,\s*(?P<handler>[^\)]*?)\s*\)",
+            "jquery_on_bind",
+        )
+
+        # 委托: $(document).on('submit', '#loginform', handler)
+        self._collect_binding_matches(
+            js_content,
+            filename,
+            rf"{jq_callee}\s*\(\s*(?:document|['\"]body['\"]|body)\s*\)\s*\.on\s*\(\s*['\"]submit['\"]\s*,\s*(?P<selector>[^,]+?)\s*,\s*(?P<handler>[^\)]*?)\s*\)",
+            "jquery_delegate",
+        )
+
+        # 原生: document.getElementById(...).addEventListener('submit', handler)
+        self._collect_binding_matches(
+            js_content,
+            filename,
+            r"document\.getElementById\s*\(\s*['\"](?P<id>[^'\"]+)['\"]\s*\)\s*\.addEventListener\s*\(\s*['\"]submit['\"]\s*,\s*(?P<handler>[^\)]*?)\s*\)",
+            "native_getElementById",
+            selector_from_id=True,
+        )
+
+        # 原生: document.querySelector('form/#id/...').addEventListener('submit', handler)
+        self._collect_binding_matches(
+            js_content,
+            filename,
+            r"document\.querySelector\s*\(\s*(?P<selector>[^\)]*?)\s*\)\s*\.addEventListener\s*\(\s*['\"]submit['\"]\s*,\s*(?P<handler>[^\)]*?)\s*\)",
+            "native_querySelector",
+        )
+
+        # 原生: element.onsubmit = handler / function(...) {}
+        self._collect_binding_matches(
+            js_content,
+            filename,
+            r"(?P<selector>document\.getElementById\s*\(\s*['\"][^'\"]+['\"]\s*\)|document\.querySelector\s*\(\s*[^\)]*\)|[A-Za-z_$][\w$]*)\s*\.onsubmit\s*=\s*(?P<handler>[^;\n]+)",
+            "native_onsubmit",
+        )
+
+    def _collect_binding_matches(
+        self,
+        js_content: str,
+        filename: str,
+        pattern: str,
+        bind_type: str,
+        selector_from_id: bool = False,
+    ):
+        """按给定正则收集事件绑定。"""
+        for m in re.finditer(pattern, js_content, re.IGNORECASE | re.DOTALL):
+            if selector_from_id:
+                selector_raw = f"#{(m.group('id') or '').strip()}"
+            else:
+                selector_raw = (m.groupdict().get("selector") or "").strip()
+
+            handler_raw = (m.groupdict().get("handler") or "").strip()
+            if not selector_raw or not handler_raw:
+                continue
+
+            selector = self._normalize_selector(selector_raw)
+            if not selector:
+                continue
+
+            line = js_content.count("\n", 0, m.start()) + 1
+            handler = self._normalize_handler_token(handler_raw, filename, line)
+            if not handler:
+                continue
+
+            self._submit_event_bindings.append({
+                "selector": selector,
+                "handler": handler,
+                "line": line,
+                "file": filename,
+                "bind_type": bind_type,
+            })
+
+    def _normalize_selector(self, selector_raw: str) -> str:
+        """将 selector 规范化成可匹配 form 的简化字符串。"""
+        s = selector_raw.strip().strip(";,")
+        if not s:
+            return ""
+        if (s.startswith("\"") and s.endswith("\"")) or (s.startswith("'") and s.endswith("'")):
+            s = s[1:-1].strip()
+
+        # 支持 document.getElementById("id") / querySelector("...") 形式
+        m_id = re.match(r"document\.getElementById\s*\(\s*['\"]([^'\"]+)['\"]\s*\)", s)
+        if m_id:
+            return f"#{m_id.group(1)}"
+        m_qs = re.match(r"document\.querySelector\s*\(\s*(['\"])(.*?)\1\s*\)", s)
+        if m_qs:
+            s = m_qs.group(2).strip()
+
+        # 只保留与 form 相关的选择器
+        if "form" in s or s.startswith("#"):
+            return s
+        return ""
+
+    def _normalize_handler_token(self, handler_raw: str, filename: str, line: int) -> str:
+        """将 handler token 解析为函数名；匿名函数回退为匿名占位。"""
+        token = handler_raw.strip().rstrip(";")
+        if not token:
+            return ""
+
+        # 常见写法: someFunc, obj.someFunc
+        ident = re.match(r"^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)$", token)
+        if ident:
+            return ident.group(1)
+
+        # function(...) { ... } / (...) => ...
+        if token.startswith("function") or "=>" in token:
+            return f"anonymous@{filename}:{line}"
+
+        return ""
+
+    def _parse_anonymous_handler(self, handler_name: str) -> Optional[tuple[str, int]]:
+        """解析 anonymous@file:line 形式的处理器标识。"""
+        m = re.match(r"^anonymous@(.+):(\d+)$", handler_name or "")
+        if not m:
+            return None
+        return m.group(1), int(m.group(2))
+
+    def _detect_password_prehash_patterns(self, js_content: str, filename: str):
+        """识别常见密码预哈希链，输出 PasswordPreHash 场景详情。"""
+        chain_re = re.compile(
+            r"CryptoJS\.SHA256\s*\(\s*CryptoJS\.SHA256\s*\(\s*(?P<pwd>[^)]{1,200})\s*\)\s*\+\s*(?P<salt>[^)]{1,200})\s*\)",
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        for m in chain_re.finditer(js_content):
+            pwd_expr = (m.group("pwd") or "").strip()
+            salt_expr = (m.group("salt") or "").strip()
+            full_expr = m.group(0).strip()
+            line = js_content.count("\n", 0, m.start()) + 1
+
+            # 去重：避免同一文件同一行重复追加
+            duplicated = any(
+                p.file == filename and p.algorithm == "SHA256" and p.line == line
+                and any((d.get("scenario") == "PasswordPreHash") for d in (p.details or []))
+                for p in self.result.crypto_patterns
+            )
+            if duplicated:
+                continue
+
+            func_name = self._infer_enclosing_function_name(js_content, m.start(), filename, line)
+            details = [
+                {
+                    "operation": "hash",
+                    "line": line,
+                    "context": f"CryptoJS.SHA256({pwd_expr})",
+                    "stage": "inner_hash",
+                    "input_expression": pwd_expr,
+                },
+                {
+                    "operation": "hash",
+                    "line": line,
+                    "context": full_expr,
+                    "stage": "outer_hash",
+                    "input_expression": f"CryptoJS.SHA256({pwd_expr}) + {salt_expr}",
+                    "input_source_keys": ["password", "username"],
+                    "scenario": "PasswordPreHash",
+                    "info": "前端口令预哈希链",
+                },
+            ]
+
+            self.result.crypto_patterns.append(CryptoPattern(
+                library="CryptoJS",
+                algorithm="SHA256",
+                operation="hash_chain",
+                function_name=func_name,
+                file=filename,
+                line=line,
+                context=full_expr[:300],
+                weakness=None,
+                details=details,
+            ))
+
+    def _infer_enclosing_function_name(self, js_content: str, pos: int, filename: str, line: int) -> str:
+        """按位置推断所在函数名；找不到则使用匿名占位。"""
+        prefix = js_content[:pos]
+        # 支持 function foo(...) 与 foo = function(...)
+        candidates: list[tuple[int, str]] = []
+
+        for m in re.finditer(r"function\s+([A-Za-z_$][\w$]*)\s*\(", prefix):
+            candidates.append((m.start(), m.group(1)))
+        for m in re.finditer(r"([A-Za-z_$][\w$]*)\s*=\s*function\s*\(", prefix):
+            candidates.append((m.start(), m.group(1)))
+
+        if candidates:
+            candidates.sort(key=lambda x: x[0])
+            return candidates[-1][1]
+        return f"anonymous@{filename}:{line}"
+
+    def _apply_submit_bindings_to_forms(self):
+        """将识别到的 submit 绑定回填到 form_action 端点。"""
+        if not self._form_bind_index or not self._submit_event_bindings:
+            return
+
+        updated = 0
+        for endpoint in self.result.endpoints:
+            if endpoint.source != "form_action":
+                continue
+
+            form_meta = next((f for f in self._form_bind_index if f["url"] == endpoint.url), None)
+            if not form_meta:
+                continue
+
+            best = None
+            best_score = 0
+            for b in self._submit_event_bindings:
+                score = self._match_selector_score(b["selector"], form_meta)
+                # 委托绑定天然更宽泛，降低一点置信度
+                if b.get("bind_type") == "jquery_delegate":
+                    score -= 10
+                if score > best_score:
+                    best_score = score
+                    best = b
+
+            # 仅在高置信度时回填；若已有内联 onsubmit 则不覆盖
+            if best and best_score >= 50 and not endpoint.trigger_function:
+                handler_name = best.get("handler")
+                if handler_name:
+                    endpoint.trigger_function = str(handler_name)
+                    updated += 1
+
+        if updated > 0:
+            console.print(f"  [green][OK][/green] 从事件绑定回填了 {updated} 个 form 触发函数")
+
+    def _match_selector_score(self, selector: str, form_meta: dict) -> int:
+        """按 selector 与 form 元数据计算匹配分，用于选择最可信的 handler。"""
+        s = (selector or "").strip()
+        if not s:
+            return 0
+
+        form_id = form_meta.get("id") or ""
+        form_name = form_meta.get("name") or ""
+        form_classes = form_meta.get("classes") or []
+
+        if form_id and f"#{form_id}" in s:
+            return 100
+        if form_name and f"name=\"{form_name}\"" in s:
+            return 90
+        for cls in form_classes:
+            if f".{cls}" in s:
+                return 80
+        if s == "form" or s.endswith(" form"):
+            return 55
+        return 0
 
     def _run_deobfuscator(self, input_path: Path, output_path: Path) -> Optional[str]:
         """运行 Node.js 解混淆器"""
@@ -324,6 +742,8 @@ class StaticAnalyzer:
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False
             )
 
@@ -362,7 +782,14 @@ class StaticAnalyzer:
                 "--input", str(input_path.absolute())
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
 
             if result.returncode == 0:
                 try:
@@ -435,6 +862,34 @@ class StaticAnalyzer:
                             detail_entry["input_source_keys"] = sub_detail["input_source_keys"]
                         if "output_transform" in sub_detail:
                             detail_entry["output_transform"] = sub_detail["output_transform"]
+                        if "mode" in sub_detail:
+                            detail_entry["mode"] = sub_detail["mode"]
+                        if "padding" in sub_detail:
+                            detail_entry["padding"] = sub_detail["padding"]
+                        if "input_encoding" in sub_detail:
+                            detail_entry["input_encoding"] = sub_detail["input_encoding"]
+                        if "output_encoding" in sub_detail:
+                            detail_entry["output_encoding"] = sub_detail["output_encoding"]
+                        if "key_encoding" in sub_detail:
+                            detail_entry["key_encoding"] = sub_detail["key_encoding"]
+                        if "iv_encoding" in sub_detail:
+                            detail_entry["iv_encoding"] = sub_detail["iv_encoding"]
+                        if "placement" in sub_detail:
+                            detail_entry["placement"] = sub_detail["placement"]
+                        if "signature_placement" in sub_detail:
+                            detail_entry["signature_placement"] = sub_detail["signature_placement"]
+                        if "signature_field" in sub_detail:
+                            detail_entry["signature_field"] = sub_detail["signature_field"]
+                        if "signature_header_name" in sub_detail:
+                            detail_entry["signature_header_name"] = sub_detail["signature_header_name"]
+                        if "signature_query_param" in sub_detail:
+                            detail_entry["signature_query_param"] = sub_detail["signature_query_param"]
+                        if "sign_input_rule" in sub_detail:
+                            detail_entry["sign_input_rule"] = sub_detail["sign_input_rule"]
+                        if "sign_input_parts" in sub_detail:
+                            detail_entry["sign_input_parts"] = sub_detail["sign_input_parts"]
+                        if "sign_input_canonicalization" in sub_detail:
+                            detail_entry["sign_input_canonicalization"] = sub_detail["sign_input_canonicalization"]
  
                         # Forward derivation logic
                         if "derivation" in sub_detail:
@@ -506,6 +961,8 @@ class StaticAnalyzer:
             if not trigger_func:
                 continue
 
+            anonymous_ref = self._parse_anonymous_handler(trigger_func)
+
             # 找到该函数使用的加密
             # 分类收集：Algorithm Patterns 和 Raw Trace Calls
 
@@ -515,7 +972,19 @@ class StaticAnalyzer:
             # 1. 从 Crypto Patterns 收集（高置信度算法识别）
             unique_patterns = set()
             for pattern in self.result.crypto_patterns:
-                if pattern.function_name == trigger_func:
+                matched = pattern.function_name == trigger_func
+
+                # 匿名 submit 处理器的回填映射：允许按 file+line 邻近匹配
+                if not matched and anonymous_ref:
+                    anon_file, anon_line = anonymous_ref
+                    same_file = (pattern.file == anon_file)
+                    near_line = abs((pattern.line or 0) - anon_line) <= 80
+                    same_anon = pattern.function_name.startswith("anonymous@")
+                    is_prehash = any((d.get("scenario") == "PasswordPreHash") for d in (pattern.details or []))
+                    if same_file and (near_line or same_anon or is_prehash):
+                        matched = True
+
+                if matched:
                     key = (pattern.library, pattern.algorithm, pattern.operation)
                     if key not in unique_patterns:
                         unique_patterns.add(key)
@@ -536,7 +1005,12 @@ class StaticAnalyzer:
 
             # 2. 从 Function Calls 收集（补充调用痕迹）
             for func in self.result.functions:
-                if func.name == trigger_func and func.calls_crypto:
+                matched_func = (func.name == trigger_func)
+                if not matched_func and anonymous_ref:
+                    anon_file, anon_line = anonymous_ref
+                    matched_func = (func.file == anon_file and abs((func.line or 0) - anon_line) <= 80)
+
+                if matched_func and func.calls_crypto:
                     for call in func.calls_crypto:
                         # 规范化：去掉可能的前缀
                         normalized = call
@@ -568,6 +1042,51 @@ class StaticAnalyzer:
                 }
 
         console.print(f"  [green][OK][/green] 建立了 {len(self.result.endpoint_crypto_map)} 个端点映射")
+
+    def _merge_js_discovered_endpoints(self, base_url: str):
+        """将函数内识别到的 API 调用补充到 endpoints，覆盖 fetch/axios/$.ajax 等场景。"""
+        existing = {(ep.url, ep.method) for ep in self.result.endpoints}
+        added = 0
+
+        for func in self.result.functions:
+            for api_url in func.calls_api:
+                if not api_url or api_url == "unknown":
+                    continue
+                if not self._looks_like_js_api(api_url):
+                    continue
+                full_url = urljoin(base_url, api_url)
+                key = (full_url, "POST")
+                if key in existing:
+                    continue
+
+                self.result.endpoints.append(Endpoint(
+                    url=full_url,
+                    method="POST",
+                    source="js_call",
+                    trigger_function=func.name
+                ))
+                existing.add(key)
+                added += 1
+
+        if added > 0:
+            console.print(f"  [green][OK][/green] 从 JS 调用补充了 {added} 个端点")
+
+    def _looks_like_js_api(self, url: str) -> bool:
+        """对 JS 中提取到的 URL 做轻量过滤，避免把配置项字符串误识别为端点。"""
+        if not url:
+            return False
+        url = url.strip()
+        if not url or url.startswith("#") or url.startswith("javascript:"):
+            return False
+
+        # 统一复用 API 判定逻辑，避免把静态资源当端点
+        if self._is_api_endpoint(url):
+            return True
+
+        # 至少包含路径分隔，且不像普通单词配置项
+        if "/" in url and not re.match(r"^[A-Za-z0-9_.-]+$", url) and not re.search(r"\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|map)(\?|$)", url, re.IGNORECASE):
+            return True
+        return False
 
     def _detect_weaknesses(self):
         """检测安全弱点"""
@@ -674,13 +1193,45 @@ def main():
 
     parser = argparse.ArgumentParser(description="一体化静态分析工具")
     parser.add_argument("--url", default=os.getenv("TARGET_URL"), help="目标 URL, 默认为靶场URL")
+    parser.add_argument("--html-file", type=Path, default=None, help="离线 HTML 输入文件（可选）")
+    parser.add_argument("--js-file", action="append", type=Path, default=[], help="手工 JS 文件，可重复传入多次")
+    parser.add_argument("--js-dir", type=Path, default=None, help="手工 JS 目录（递归读取 *.js）")
     # If --output is not provided, StaticAnalyzer will create script-relative directory under collect/
     parser.add_argument("--output", type=Path, default=None, help="可选：自定义输出目录 (默认放到 collect/static_analysis)")
+    parser.add_argument("--no-default-blacklist", action="store_true", help="关闭内置第三方库黑名单")
+    parser.add_argument("--blacklist-pattern", action="append", default=[], help="追加黑名单关键字，可重复传入")
 
     args = parser.parse_args()
 
-    analyzer = StaticAnalyzer(output_dir=args.output)
-    analyzer.analyze(args.url)
+    if not args.url and not args.html_file:
+        parser.error("必须至少提供 --url 或 --html-file")
+
+    manual_js_files: list[Path] = []
+    for p in args.js_file or []:
+        if p.exists() and p.is_file() and p.suffix.lower() == ".js":
+            manual_js_files.append(p)
+        else:
+            console.print(f"[yellow]![/yellow] 忽略无效 --js-file: {p}")
+
+    if args.js_dir:
+        if args.js_dir.exists() and args.js_dir.is_dir():
+            manual_js_files.extend(sorted(args.js_dir.rglob("*.js")))
+        else:
+            console.print(f"[yellow]![/yellow] 忽略无效 --js-dir: {args.js_dir}")
+
+    html_override = None
+    if args.html_file:
+        try:
+            html_override = args.html_file.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            html_override = args.html_file.read_text(encoding="utf-8", errors="ignore")
+
+    analyzer = StaticAnalyzer(
+        output_dir=args.output,
+        default_blacklist_enabled=not args.no_default_blacklist,
+        extra_blacklist_patterns=args.blacklist_pattern,
+    )
+    analyzer.analyze(args.url or "http://localhost/", html_override=html_override, manual_js_files=manual_js_files)
     analyzer.display_summary()
     analyzer.save_results()
 

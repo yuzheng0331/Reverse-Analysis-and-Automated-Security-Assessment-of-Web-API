@@ -88,14 +88,14 @@ baseline_samples/
 # -----------------------------------------------------------------------------
 # Negated Rules for Tracking Specific Files
 # -----------------------------------------------------------------------------
-baseline_samples/README.md
-baseline_samples/说明.md
-assessment_results/README.md
-assessment_results/说明.md
-collect/static_analysis/README.md
-collect/static_analysis/说明.md
-report/README.md
-report/说明.md
+!baseline_samples/README.md
+!baseline_samples/说明.md
+!assessment_results/README.md
+!assessment_results/说明.md
+!collect/static_analysis/README.md
+!collect/static_analysis/说明.md
+!report/README.md
+!report/说明.md
 
 # -----------------------------------------------------------------------------
 # Sensitive Files
@@ -121,7 +121,9 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
-
+assess/test_report_gen_formatting.py
+assess/test_assess_endpoint_expectations.py
+assess/test_assess_endpoint_interlayers.py
 # -----------------------------------------------------------------------------
 # Documentation Build
 # -----------------------------------------------------------------------------
