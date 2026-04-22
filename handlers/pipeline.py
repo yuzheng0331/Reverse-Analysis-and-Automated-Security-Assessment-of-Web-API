@@ -59,14 +59,16 @@ class BaselinePipelineRunner:
             meta = skeleton.get("meta", {})
             req = skeleton.get("request", {})
             val = skeleton.get("validation", {})
+            runtime_params = val.get("runtime_params", {})
             endpoint_id = meta.get("id", f"entry_{i}")
             url = meta.get("url", "unknown")
+            execution_flow = meta.get("execution_flow", [])
 
             print(f"\n>>> Processing Endpoint: {endpoint_id} ({url})")
 
             # 1. Check Payload
             payload = req.get("payload")
-            if self._is_payload_missing(payload):
+            if self._is_payload_missing(payload, runtime_params, execution_flow):
                 print(f"[-] Payload missing or incomplete.")
                 skeleton["status"] = "PENDING_PAYLOAD"
                 if interactive:
@@ -85,7 +87,6 @@ class BaselinePipelineRunner:
                     continue
 
             # 2. Build Pipeline Steps & Context
-            execution_flow = meta.get("execution_flow", [])
             steps, flow_context = self._build_steps_and_context(execution_flow)
 
             # 3. Execution
@@ -106,21 +107,12 @@ class BaselinePipelineRunner:
             pipeline = HandlerPipeline(pipeline_config)
 
             # Inject capture runtime parameters (Keys, IVs, Nonces) to ensure deterministic reproduction
-            runtime_params = val.get("runtime_params", {})
             if runtime_params:
                 print(f"[*] Injecting runtime params: {list(runtime_params.keys())}")
                 # Ensure we don't overwrite payload if it's there, though payload is 1st arg
             
-            # 关键修复：仅当当前基线缺少结构化输入信息时，才回退使用捕获的 message。
+            # 使用基线 payload 作为唯一输入来源，避免验证阶段的启发式兜底。
             input_data = payload
-            has_structured_inputs = any(
-                step.get("input_expression") or step.get("input_derivation")
-                for step in execution_flow
-                if str(step.get("step_type", "")).lower() in ["encrypt", "sign"]
-            )
-            if not has_structured_inputs and "message" in runtime_params and runtime_params["message"]:
-                 print(f"[*] 当前基线缺少结构化输入，回退使用 captured 'message' 作为验证输入")
-                 input_data = runtime_params["message"]
 
             result = pipeline.execute(input_data, **runtime_params)
 
@@ -213,12 +205,54 @@ class BaselinePipelineRunner:
             json.dump(self.skeletons, f, indent=2, ensure_ascii=False)
         print(f"\n[+] Updated baseline file: {self.file_path}")
 
-    def _is_payload_missing(self, payload: Any) -> bool:
-        if not payload: return True
+    def _is_payload_missing(
+        self,
+        payload: Any,
+        runtime_params: Optional[Dict[str, Any]] = None,
+        execution_flow: Optional[List[Dict[str, Any]]] = None,
+    ) -> bool:
+        if not payload:
+            return True
+
+        # 这些字段通常由运行时（hook 或 handler）回填，不要求用户在 payload 中手工填写
+        runtime_fillable_fields = {
+            "signature", "timestamp", "nonce", "random", "encryptedTimestamp"
+        }
+        runtime_params = runtime_params or {}
+
+        # 由 execution_flow 自动生成/回填的字段：不要求用户手工填写。
+        flow_fillable_fields = set(runtime_fillable_fields)
+        for step in execution_flow or []:
+            output_var = step.get("output_variable")
+            if output_var:
+                flow_fillable_fields.add(str(output_var))
+
+            if str(step.get("step_type", "")).lower() == "pack":
+                packing_info = (step.get("runtime_args", {}) or {}).get("packing_info", {}) or {}
+                structure = packing_info.get("structure", {}) or {}
+                for source_name in structure.values():
+                    if source_name:
+                        flow_fillable_fields.add(str(source_name))
+                field_sources = packing_info.get("field_sources", {}) or {}
+                if isinstance(field_sources, dict):
+                    for _, source_meta in field_sources.items():
+                        if isinstance(source_meta, dict) and source_meta.get("source_name"):
+                            flow_fillable_fields.add(str(source_meta.get("source_name")))
+
         if isinstance(payload, dict):
-            if "_comment" in payload: return True
-            # If payload has keys with <Fill Value>, it's missing values
-            if any(v == "<Fill Value>" for v in payload.values()): return True
+            if "_comment" in payload:
+                return True
+
+            # 若字段是可运行时回填字段，且 runtime_params 中已有对应值，则不视为缺失
+            for key, value in payload.items():
+                if value != "<Fill Value>":
+                    continue
+                if key in flow_fillable_fields:
+                    continue
+                if key in runtime_fillable_fields and runtime_params.get(key) not in [None, "", "<Fill Value>"]:
+                    continue
+                return True
+
         return False
 
     def _prompt_payload(self) -> Optional[Dict]:
@@ -506,18 +540,35 @@ class HandlerPipeline:
     def _resolve_step_input(self, step: Dict[str, Any], context: CryptoContext, current_output: Any) -> Any:
         input_expression = step.get("input_expression")
         input_derivation = step.get("input_derivation")
-        runtime_params = context.extra_params.get("runtime_params", {}) or {}
+        input_source_keys = step.get("input_source_keys") or []
+        base_payload = context.extra_params.get("base_payload", {}) or {}
+        step_type = str(step.get("step_type", "")).lower()
         algorithm = str(step.get("algorithm", "")).upper()
+        operation = str(step.get("operation", "")).lower()
+        is_hmac_sign = (
+            (step_type == "sign" and "HMAC" in algorithm)
+            or (operation.startswith("hmac") or "hmac" in operation)
+            or ("HMAC" in algorithm)
+        )
 
-        # 对精确匹配最敏感的场景，优先使用浏览器真实捕获到的明文输入，避免字段顺序差异
-        if input_expression in ["jsonData", "dataString", "formData", "dataToSend", "dataPacket"] and runtime_params.get("message"):
-            return runtime_params.get("message")
-        if algorithm == "DES" and input_expression == "password" and runtime_params.get("message"):
-            return runtime_params.get("message")
+        # HMAC 场景优先使用 capture 回填的原始签名输入，避免静态占位 derivation 导致常量签名。
+        if is_hmac_sign:
+            runtime_message = (context.extra_params.get("runtime_params", {}) or {}).get("message")
+            if runtime_message not in [None, ""]:
+                return runtime_message
 
         if input_expression:
             resolved = self._resolve_expression(input_expression, context, current_output)
             if resolved is not None:
+                if (
+                    isinstance(resolved, str)
+                    and str(input_expression).strip().startswith("JSON.stringify(")
+                    and isinstance(base_payload, dict)
+                    and input_source_keys
+                ):
+                    ordered_json = self._stringify_with_preferred_order(base_payload, input_source_keys)
+                    if ordered_json is not None:
+                        return ordered_json
                 return resolved
 
         if input_derivation:
@@ -525,7 +576,29 @@ class HandlerPipeline:
             if resolved is not None:
                 return resolved
 
+        # 某些 HMAC 端点静态流仅保留 dataToSign 占位表达式，未落到可解析 derivation。
+        # 此时优先回退到 capture 回填的 runtime_params.message，避免误签整个 payload。
+        if is_hmac_sign:
+            runtime_message = (context.extra_params.get("runtime_params", {}) or {}).get("message")
+            if runtime_message not in [None, ""]:
+                return runtime_message
+
         return current_output
+
+    def _stringify_with_preferred_order(self, payload: Dict[str, Any], preferred_keys: List[Any]) -> Optional[str]:
+        if not isinstance(payload, dict):
+            return None
+        ordered: Dict[str, Any] = {}
+        seen: set[str] = set()
+        for key in preferred_keys:
+            key_text = str(key)
+            if key_text in payload and key_text not in seen:
+                ordered[key_text] = payload[key_text]
+                seen.add(key_text)
+        for key, value in payload.items():
+            if key not in seen:
+                ordered[key] = value
+        return json.dumps(ordered, separators=(",", ":"), ensure_ascii=False)
 
     def _resolve_expression(self, expression: str, context: CryptoContext, current_output: Any) -> Any:
         expr = str(expression).strip()
@@ -543,12 +616,8 @@ class HandlerPipeline:
         if expr in runtime_params:
             return runtime_params[expr]
         if expr in ["jsonData", "dataString", "formData", "dataToSend", "dataPacket"]:
-            if runtime_params.get("message"):
-                return runtime_params.get("message")
             return json.dumps(base_payload, separators=(",", ":"), ensure_ascii=False)
         if expr.startswith("JSON.stringify(") and expr.endswith(")"):
-            if runtime_params.get("message"):
-                return runtime_params.get("message")
             inner = expr[len("JSON.stringify("):-1].strip()
             inner_val = self._resolve_expression(inner, context, current_output)
             if inner_val is None:
@@ -716,12 +785,21 @@ class HandlerPipeline:
                 field_source = field_sources[field_name]
                 source_expr = str(field_source.get("source_expression", ""))
                 source_var = field_source.get("source_name")
+                bridge_var = field_source.get("bridge_from_output")
+                bridge_transform = str(field_source.get("bridge_transform", "")).lower()
                 if source_var in context.intermediate_results:
                     value = context.get_intermediate(source_var)
                 elif source_var in (context.extra_params.get("runtime_params", {}) or {}):
                     value = context.extra_params.get("runtime_params", {}).get(source_var)
                 elif source_var in (context.extra_params.get("base_payload", {}) or {}):
                     value = context.extra_params.get("base_payload", {}).get(source_var)
+                elif bridge_var in context.intermediate_results:
+                    value = context.get_intermediate(bridge_var)
+                    if bridge_transform == "hex" and isinstance(value, str):
+                        try:
+                            value = base64.b64decode(value).hex()
+                        except Exception:
+                            pass
                 elif field_source.get("derivation"):
                     value = self._evaluate_derivation(field_source.get("derivation"), context, current_output)
                 if value is not None and source_expr.startswith("encodeURIComponent("):
@@ -770,3 +848,4 @@ class HandlerPipeline:
         if isinstance(value, str):
             return value.encode("utf-8")
         return str(value).encode("utf-8")
+

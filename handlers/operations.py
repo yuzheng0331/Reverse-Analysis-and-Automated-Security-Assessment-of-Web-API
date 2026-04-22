@@ -50,16 +50,65 @@ def _ensure_bytes(val: Any) -> bytes:
     return val.encode('utf-8')
 
 
-def _rsa_encrypt_chunked(cipher: Any, plaintext: bytes, key_size_bytes: int) -> bytes:
-    """对超长 RSA 明文执行 PKCS#1 v1.5 分块加密，避免单块长度超限。"""
-    max_chunk = key_size_bytes - 11
-    if max_chunk <= 0:
-        raise ValueError("Invalid RSA key size")
-    blocks = []
-    for index in range(0, len(plaintext), max_chunk):
-        chunk = plaintext[index:index + max_chunk]
-        blocks.append(cipher.encrypt(chunk))
-    return b"".join(blocks)
+def _material_to_bytes(val: Any, valid_lengths: set[int], prefer_hex_when_ambiguous: bool = True) -> bytes:
+    """
+    将 key/iv 材料转换为 bytes，并按合法长度做选择。
+    规则：
+    - 仅 UTF-8 合法：使用 UTF-8。
+    - 仅 Hex 解码后合法：使用 Hex。
+    - 两者都合法：默认偏向 Hex（适配 runtime 回填的十六进制材料）。
+    - 两者都不合法：回退 UTF-8，交给下游算法报错。
+    """
+    if isinstance(val, bytes):
+        return val
+    text = str(val).strip() if val is not None else ""
+
+    utf8_candidate = text.encode("utf-8")
+    utf8_ok = len(utf8_candidate) in valid_lengths
+
+    hex_candidate = None
+    hex_ok = False
+    if len(text) % 2 == 0:
+        try:
+            hex_candidate = binascii.unhexlify(text)
+            hex_ok = len(hex_candidate) in valid_lengths
+        except (binascii.Error, ValueError):
+            hex_ok = False
+
+    if utf8_ok and not hex_ok:
+        return utf8_candidate
+    if hex_ok and not utf8_ok:
+        return hex_candidate
+    if utf8_ok and hex_ok:
+        return hex_candidate if prefer_hex_when_ambiguous else utf8_candidate
+    return utf8_candidate
+
+
+def _normalize_padding_name(padding_name: Any) -> str:
+    raw = str(padding_name or "Pkcs7").strip().lower().replace("-", "").replace("_", "")
+    if raw in {"pkcs7", "pkcs5"}:
+        return "pkcs7"
+    if raw in {"zeropadding", "zero"}:
+        return "zeropadding"
+    if raw in {"nopadding", "none"}:
+        return "nopadding"
+    return raw
+
+
+def _apply_block_padding(data: bytes, block_size: int, padding_name: Any) -> bytes:
+    mode = _normalize_padding_name(padding_name)
+    if mode == "pkcs7":
+        return pad(data, block_size)
+    if mode == "zeropadding":
+        remainder = len(data) % block_size
+        if remainder == 0:
+            return data
+        return data + (b"\x00" * (block_size - remainder))
+    if mode == "nopadding":
+        if len(data) % block_size != 0:
+            raise ValueError("NoPadding requires plaintext length aligned to block size")
+        return data
+    raise ValueError(f"Unsupported padding: {padding_name}")
 
 
 # =============================================================================
@@ -90,9 +139,9 @@ class AESEncryptOperation(CryptoOperation):
             if not is_valid:
                 return HandlerResult(success=False, error=error)
 
-            # 获取参数并转换为 bytes (使用 _ensure_bytes 处理 Hex 情况)
-            key = _ensure_bytes(context.key or context.extra_params.get("key"))
-            iv = _ensure_bytes(context.iv or context.extra_params.get("iv"))
+            # 获取参数并转换为 bytes：按 AES 长度规则做 UTF-8/Hex 自适应
+            key = _material_to_bytes(context.key or context.extra_params.get("key"), {16, 24, 32})
+            iv = _material_to_bytes(context.iv or context.extra_params.get("iv"), {16})
 
             mode_str = context.mode.upper() if context.mode else "CBC"
 
@@ -111,9 +160,10 @@ class AESEncryptOperation(CryptoOperation):
             if isinstance(plaintext, str):
                 plaintext = plaintext.encode(context.input_encoding)
 
-            # 填充
+            # 填充（与前端配置对齐）
             block_size = AES.block_size
-            plaintext = pad(plaintext, block_size)
+            padding_name = context.padding or context.extra_params.get("padding") or "Pkcs7"
+            plaintext = _apply_block_padding(plaintext, block_size, padding_name)
 
             # 加密
             ciphertext = cipher.encrypt(plaintext)
@@ -130,7 +180,7 @@ class AESEncryptOperation(CryptoOperation):
                 success=True,
                 output=output,
                 context=context,
-                metadata={"algorithm": "AES", "mode": mode_str}
+                metadata={"algorithm": "AES", "mode": mode_str, "padding": _normalize_padding_name(padding_name)}
             )
 
         except Exception as e:
@@ -146,8 +196,9 @@ class DESEncryptOperation(CryptoOperation):
 
     def execute(self, context: CryptoContext) -> HandlerResult:
         try:
-            key = _ensure_bytes(context.key or context.extra_params.get("key"))
-            iv = _ensure_bytes(context.iv or context.extra_params.get("iv"))
+            # DES 仅支持 8 字节 key/iv
+            key = _material_to_bytes(context.key or context.extra_params.get("key"), {8})
+            iv = _material_to_bytes(context.iv or context.extra_params.get("iv"), {8})
 
             mode_str = context.mode.upper() if context.mode else "CBC"
 
@@ -166,8 +217,9 @@ class DESEncryptOperation(CryptoOperation):
             if isinstance(plaintext, str):
                 plaintext = plaintext.encode(context.input_encoding)
 
-            # 填充
-            plaintext = pad(plaintext, DES.block_size)
+            # 填充（与前端配置对齐）
+            padding_name = context.padding or context.extra_params.get("padding") or "Pkcs7"
+            plaintext = _apply_block_padding(plaintext, DES.block_size, padding_name)
 
             # 加密
             ciphertext = cipher.encrypt(plaintext)
@@ -184,7 +236,7 @@ class DESEncryptOperation(CryptoOperation):
                 success=True,
                 output=output,
                 context=context,
-                metadata={"algorithm": "DES", "mode": mode_str}
+                metadata={"algorithm": "DES", "mode": mode_str, "padding": _normalize_padding_name(padding_name)}
             )
 
         except Exception as e:
@@ -249,11 +301,15 @@ class RSAEncryptOperation(CryptoOperation):
             if isinstance(plaintext, str):
                 plaintext = plaintext.encode('utf-8')
 
-            # 加密：超长明文采用分块，避免 "Plaintext is too long"
-            key_size_bytes = key.size_in_bytes()
-            max_chunk = key_size_bytes - 11
+            # PKCS1_v1_5 最大明文块：key_size_bytes - 11
+            key_size = key.size_in_bytes()
+            max_chunk = max(1, key_size - 11)
+
+            # 加密（超长明文分块，避免 Plaintext is too long）
             if len(plaintext) > max_chunk:
-                ciphertext = _rsa_encrypt_chunked(cipher, plaintext, key_size_bytes)
+                chunks = [plaintext[i:i + max_chunk] for i in range(0, len(plaintext), max_chunk)]
+                encrypted_chunks = [cipher.encrypt(chunk) for chunk in chunks]
+                ciphertext = b"".join(encrypted_chunks)
             else:
                 ciphertext = cipher.encrypt(plaintext)
 
@@ -264,7 +320,7 @@ class RSAEncryptOperation(CryptoOperation):
                 success=True,
                 output=output,
                 context=context,
-                metadata={"algorithm": "RSA"}
+                metadata={"algorithm": "RSA", "chunked": len(plaintext) > max_chunk, "max_chunk": max_chunk}
             )
 
         except Exception as e:
@@ -347,7 +403,8 @@ class HMACSha256Operation(CryptoOperation):
 
             plaintext = context.plaintext
             if isinstance(plaintext, dict):
-                plaintext = json.dumps(plaintext, separators=(',', ':'), sort_keys=True)
+                # 保留字段插入顺序，避免与前端构造顺序不一致导致签名偏差
+                plaintext = json.dumps(plaintext, separators=(',', ':'), ensure_ascii=False)
             if isinstance(plaintext, str):
                 plaintext = plaintext.encode(context.input_encoding)
 
@@ -509,6 +566,25 @@ class VariableDerivationOperation(CryptoOperation):
                 return str(input_val).encode('utf-8')
 
             raise ValueError(f"Unsupported operation: {op_method}")
+
+        if node_type == "call":
+            callee = str(node.get("callee") or "")
+            args_nodes = node.get("args", []) or []
+            args = [self._evaluate(arg, payload) for arg in args_nodes]
+
+            # 兼容静态分析输出: __gen_parse_material("...", "hex")
+            if callee == "__gen_parse_material":
+                if not args:
+                    raise ValueError("__gen_parse_material requires at least one argument")
+                material = args[0]
+                encoding = str(args[1]).lower() if len(args) > 1 else ""
+                if encoding == "hex":
+                    return str(material)
+                if encoding in {"utf8", "utf-8", "string", "text"}:
+                    return str(material)
+                return material
+
+            raise ValueError(f"Unsupported call: {callee}")
 
         raise ValueError(f"Unknown node type: {node_type}")
 
