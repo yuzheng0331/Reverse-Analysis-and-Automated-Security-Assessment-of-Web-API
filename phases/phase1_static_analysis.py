@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 from typing import TextIO
 
-from common import BASE_DIR, DEFAULT_TARGET_URL, latest_matching_file, run_python_script, emit
+from phases.common import BASE_DIR, DEFAULT_TARGET_URL, latest_matching_file, run_python_script, emit
 
 
 def run_phase1(url: str, log_handle: TextIO | None = None) -> Path:

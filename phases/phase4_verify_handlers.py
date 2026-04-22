@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 from typing import TextIO
-from common import BASE_DIR, resolve_baseline_path, run_python_script, summarize_verification, emit
+from phases.common import BASE_DIR, resolve_baseline_path, run_python_script, summarize_verification, emit
 
 
 def run_phase4(baseline: str | Path | None = None, interactive: bool = False, log_handle: TextIO | None = None) -> Path:

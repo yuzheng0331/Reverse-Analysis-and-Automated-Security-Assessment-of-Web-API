@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from typing import TextIO
-from common import BASE_DIR, DEFAULT_PASSWORD, DEFAULT_USERNAME, fill_login_payloads, resolve_baseline_path, run_python_script, emit
+from phases.common import BASE_DIR, DEFAULT_PASSWORD, DEFAULT_USERNAME, fill_login_payloads, resolve_baseline_path, run_python_script, emit
 
 
 def run_phase2(username: str, password: str, log_handle: TextIO | None = None) -> Path:

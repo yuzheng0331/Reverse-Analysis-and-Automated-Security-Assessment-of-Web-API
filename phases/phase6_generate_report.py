@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from assess.report_gen import ReportGenerator
-from common import BASE_DIR, resolve_baseline_path, emit
+from phases.common import BASE_DIR, resolve_baseline_path, emit
 from runtime.generate_profile_charts import generate_all_charts
 
 
