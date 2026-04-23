@@ -7,6 +7,7 @@ from typing import Any
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import BoundaryNorm, ListedColormap
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -30,6 +31,17 @@ STATUS_COLORS = {
     "LOCAL_FAILED": "#d62728",
     "SKIPPED": "#ff7f0e",
     "REMOTE_SENT": "#1f77b4",
+}
+
+GATE_COLOR_MAP = {
+    "NO_SCENARIO": "#e0e0e0",
+    "SENDABLE": "#81c784",
+    "UNMUTATABLE": "#bdbdbd",
+    "MUTATION_NOT_EFFECTIVE": "#ffcc80",
+    "SKIPPED_OTHER": "#ef9a9a",
+    "RUNTIME_DEP_MISSING": "#b39ddb",
+    "LOCAL_EXECUTION_ERROR": "#ef9a9a",
+    "OTHER": "#90caf9",
 }
 
 REMOTE_STATUS_COLORS = {
@@ -251,6 +263,71 @@ def chart_workflow_overview(output_dir: Path) -> Path:
     return path
 
 
+def chart_endpoint_scenario_expectation_hit_matrix(assessment_path: Path, output_dir: Path) -> Path:
+    assessment = _load_json(assessment_path)
+    path = output_dir / "endpoint_scenario_expectation_hit_matrix.png"
+
+    endpoints = assessment.get("assessments", []) or []
+    if not endpoints:
+        return _save_placeholder_chart(path, "端点-场景预期命中矩阵图", "当前 assessment 中没有端点数据。")
+
+    scenario_ids: list[str] = []
+    scenario_set: set[str] = set()
+    for endpoint in endpoints:
+        for scenario in endpoint.get("scenario_results", []) or []:
+            scenario_id = str(scenario.get("scenario_id") or "unknown")
+            if scenario_id not in scenario_set:
+                scenario_set.add(scenario_id)
+                scenario_ids.append(scenario_id)
+
+    if not scenario_ids:
+        return _save_placeholder_chart(path, "端点-场景预期命中矩阵图", "没有可用场景数据。")
+
+    endpoint_labels: list[str] = []
+    matrix: list[list[int]] = []
+    for endpoint in endpoints:
+        endpoint_labels.append(str(endpoint.get("endpoint_id") or "unknown"))
+        index_map: dict[str, int] = {}
+        for scenario in endpoint.get("scenario_results", []) or []:
+            scenario_id = str(scenario.get("scenario_id") or "unknown")
+            expectation = scenario.get("expectation", {}) or {}
+            if not expectation.get("defined"):
+                index_map[scenario_id] = -1
+            else:
+                index_map[scenario_id] = 1 if expectation.get("matched") else 0
+        row = [index_map.get(scenario_id, -2) for scenario_id in scenario_ids]
+        matrix.append(row)
+
+    cmap = ListedColormap(["#e0e0e0", "#bdbdbd", "#e57373", "#81c784"])
+    # -2:无该场景, -1:未定义预期, 0:未命中, 1:命中
+    norm = BoundaryNorm([-2.5, -1.5, -0.5, 0.5, 1.5], cmap.N)
+
+    fig_width = max(10.0, len(scenario_ids) * 0.75)
+    fig_height = max(4.8, len(endpoint_labels) * 0.7)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    im = ax.imshow(matrix, cmap=cmap, norm=norm, aspect="auto")
+
+    ax.set_xticks(range(len(scenario_ids)))
+    ax.set_xticklabels(scenario_ids, rotation=35, ha="right")
+    ax.set_yticks(range(len(endpoint_labels)))
+    ax.set_yticklabels(endpoint_labels)
+    ax.set_xlabel("场景 ID")
+    ax.set_ylabel("端点")
+    ax.set_title("端点-场景预期命中矩阵图", fontsize=15)
+
+    for row_idx, row in enumerate(matrix):
+        for col_idx, value in enumerate(row):
+            marker = "NA" if value == -2 else ("U" if value == -1 else ("OK" if value == 1 else "X"))
+            ax.text(col_idx, row_idx, marker, ha="center", va="center", fontsize=8, color="#222")
+
+    colorbar = fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
+    colorbar.set_ticks([-2, -1, 0, 1])
+    colorbar.set_ticklabels(["无该场景", "未定义预期", "未命中", "命中"])
+
+    _save_figure(fig, path)
+    return path
+
+
 def chart_validation_distribution(baseline_path: Path, output_dir: Path) -> Path:
     baseline = _load_json(baseline_path)
     counts: dict[str, int] = {}
@@ -354,13 +431,100 @@ def chart_scenario_status_distribution(assessment_path: Path, output_dir: Path) 
     return path
 
 
+def chart_endpoint_scenario_state_machine_matrix(assessment_path: Path, output_dir: Path) -> Path:
+    assessment = _load_json(assessment_path)
+    path = output_dir / "endpoint_scenario_state_machine_matrix.png"
+
+    endpoints = assessment.get("assessments", []) or []
+    if not endpoints:
+        return _save_placeholder_chart(path, "端点-场景状态机矩阵图", "当前 assessment 中没有端点数据。")
+
+    scenario_ids: list[str] = []
+    scenario_set: set[str] = set()
+    for endpoint in endpoints:
+        for scenario in endpoint.get("scenario_results", []) or []:
+            scenario_id = str(scenario.get("scenario_id") or "unknown")
+            if scenario_id not in scenario_set:
+                scenario_set.add(scenario_id)
+                scenario_ids.append(scenario_id)
+
+    gate_order = [
+        "NO_SCENARIO",
+        "SENDABLE",
+        "UNMUTATABLE",
+        "MUTATION_NOT_EFFECTIVE",
+        "SKIPPED_OTHER",
+        "RUNTIME_DEP_MISSING",
+        "LOCAL_EXECUTION_ERROR",
+        "OTHER",
+    ]
+    gate_to_idx = {name: idx for idx, name in enumerate(gate_order)}
+
+    endpoint_labels: list[str] = []
+    matrix: list[list[int]] = []
+    for endpoint in endpoints:
+        endpoint_id = str(endpoint.get("endpoint_id") or "unknown")
+        endpoint_labels.append(endpoint_id)
+
+        scenario_gate_map: dict[str, str] = {}
+        for scenario in endpoint.get("scenario_results", []) or []:
+            scenario_id = str(scenario.get("scenario_id") or "unknown")
+            gate_code = str(((scenario.get("local_gate", {}) or {}).get("code") or "OTHER"))
+            if gate_code not in gate_to_idx:
+                gate_code = "OTHER"
+            scenario_gate_map[scenario_id] = gate_code
+
+        row = [gate_to_idx[scenario_gate_map.get(sid, "NO_SCENARIO")] for sid in scenario_ids]
+        matrix.append(row)
+
+    cmap = ListedColormap([GATE_COLOR_MAP.get(gate, GATE_COLOR_MAP["OTHER"]) for gate in gate_order])
+    norm = BoundaryNorm([i - 0.5 for i in range(len(gate_order) + 1)], cmap.N)
+
+    fig_width = max(10.0, len(scenario_ids) * 0.75)
+    fig_height = max(4.8, len(endpoint_labels) * 0.65)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    im = ax.imshow(matrix, cmap=cmap, norm=norm, aspect="auto")
+
+    ax.set_xticks(range(len(scenario_ids)))
+    ax.set_xticklabels(scenario_ids, rotation=35, ha="right")
+    ax.set_yticks(range(len(endpoint_labels)))
+    ax.set_yticklabels(endpoint_labels)
+    ax.set_xlabel("场景 ID")
+    ax.set_ylabel("端点")
+    ax.set_title("端点-场景状态机矩阵图", fontsize=15)
+
+    marker_map = {
+        "NO_SCENARIO": "NA",
+        "SENDABLE": "S",
+        "UNMUTATABLE": "U",
+        "MUTATION_NOT_EFFECTIVE": "M",
+        "SKIPPED_OTHER": "K",
+        "RUNTIME_DEP_MISSING": "R",
+        "LOCAL_EXECUTION_ERROR": "E",
+        "OTHER": "O",
+    }
+    idx_to_gate = {idx: gate for gate, idx in gate_to_idx.items()}
+
+    for i, row in enumerate(matrix):
+        for j, value_idx in enumerate(row):
+            gate_name = idx_to_gate.get(value_idx, "OTHER")
+            marker = marker_map.get(gate_name, "O")
+            ax.text(j, i, marker, ha="center", va="center", fontsize=8, color="#222")
+
+    colorbar = fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
+    colorbar.set_ticks(list(range(len(gate_order))))
+    colorbar.set_ticklabels(gate_order)
+    _save_figure(fig, path)
+    return path
+
+
 def chart_remote_execution_overview(assessment_path: Path, output_dir: Path) -> Path:
     assessment = _load_json(assessment_path)
     remote = _build_remote_summary(assessment)
     path = output_dir / "remote_execution_overview.png"
     total = int(remote.get("total_scenarios", 0))
     if total <= 0:
-        return _save_placeholder_chart(path, "在线验证执行总览图", "当前 assessment 中没有可用场景数据。")
+        return _save_placeholder_chart(path, "在线验证执行总览图", "阶段5固定在线验证；当前 assessment 中没有可用场景数据。")
 
     categories = ["未发起", "已发送", "已响应", "错误"]
     values = [
@@ -373,6 +537,7 @@ def chart_remote_execution_overview(assessment_path: Path, output_dir: Path) -> 
     bars = ax.bar(categories, values, color=[REMOTE_STATUS_COLORS[item] for item in categories])
     ax.set_ylabel("场景数量")
     ax.set_title("在线验证执行总览图", fontsize=15)
+    ax.text(0.5, -0.18, "阶段5固定在线验证；\"未发起\"通常由门控跳过或请求不可落地导致。", transform=ax.transAxes, ha="center", va="top", fontsize=9, color="#555")
     for bar, value in zip(bars, values):
         ax.text(bar.get_x() + bar.get_width() / 2, value + 0.2, str(value), ha="center", va="bottom", fontsize=10)
     _save_figure(fig, path)
@@ -385,7 +550,7 @@ def chart_remote_status_code_distribution(assessment_path: Path, output_dir: Pat
     counts = remote.get("status_code_counts", {}) or {}
     path = output_dir / "remote_http_status_distribution.png"
     if not counts:
-        mode_label = "当前为本地预评估模式，未产生 HTTP 状态码。" if not (assessment.get("source", {}) or {}).get("send_requests") else "已开启真实目标验证，但尚未收到任何 HTTP 响应。"
+        mode_label = "阶段5按在线验证口径执行，但当前 assessment 尚未收到任何 HTTP 响应。"
         return _save_placeholder_chart(path, "远程HTTP状态码分布图", mode_label)
 
     labels = list(counts.keys())
@@ -460,7 +625,7 @@ def chart_scenario_response_mode_heatmap(assessment_path: Path, output_dir: Path
         row = [matrix_counts[category].get(mode, 0) for mode in modes_order]
         data.append(row)
 
-    fig, ax = plt.subplots(figsize=(max(9, len(modes_order) * 1.2), max(4.5, len(categories_order) * 0.7)))
+    fig, ax = plt.subplots(figsize=(max(9.0, len(modes_order) * 1.2), max(4.5, len(categories_order) * 0.7)))
     im = ax.imshow(data, cmap="YlOrRd", aspect="auto")
     ax.set_xticks(range(len(modes_order)))
     ax.set_xticklabels(modes_order, rotation=25, ha="right")
@@ -493,15 +658,22 @@ def generate_all_charts(
     paper_assessment_path = paper_assessment_path if paper_assessment_path and paper_assessment_path.exists() else _resolve_profile_assessment("paper_v1")
     output_dir = _ensure_output_dir(output_dir or (BASE_DIR / "report" / "charts"))
 
+    for obsolete_name in [
+        "scenario_status_distribution.png",
+        "remote_http_status_distribution.png",
+        "endpoint_state_machine_matrix.png",
+    ]:
+        obsolete_path = output_dir / obsolete_name
+        if obsolete_path.exists():
+            obsolete_path.unlink()
+
     generated = [
-        chart_workflow_overview(output_dir),
         chart_validation_distribution(baseline_path, output_dir),
         chart_endpoint_scores(assessment_path, output_dir),
         chart_profile_comparison(default_assessment_path, paper_assessment_path, output_dir),
-        chart_scenario_status_distribution(assessment_path, output_dir),
+        chart_endpoint_scenario_state_machine_matrix(assessment_path, output_dir),
+        chart_endpoint_scenario_expectation_hit_matrix(assessment_path, output_dir),
         chart_remote_execution_overview(assessment_path, output_dir),
-        chart_remote_status_code_distribution(assessment_path, output_dir),
-        chart_endpoint_remote_coverage(assessment_path, output_dir),
         chart_scenario_response_mode_heatmap(assessment_path, output_dir),
     ]
     return generated
