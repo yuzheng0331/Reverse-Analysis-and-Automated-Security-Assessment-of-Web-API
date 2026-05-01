@@ -18,23 +18,35 @@ profiles:
       default: 1.0
       cryptography: 1.2
       authentication: 1.1
+      credential_handling: 1.2
       configuration: 0.8
     scenario_status_penalties:
-      LOCAL_FAILED: 2.0
-      SKIPPED: 2.0
+      LOCAL_FAILED: 0.0
+      SKIPPED: 0.0
       LOCAL_OK: 0.0
-      REMOTE_SENT: 0.0
-    scenario_category_multipliers:
+      REMOTE_SENT: 1.0
+      SPECIAL_PATH: 0.0
+    expectation_mismatch_penalties:
       default: 1.0
-      baseline_replay: 1.0
+      baseline_replay: 4.0
       plaintext_mutation: 1.1
       boundary_anomaly: 0.8
       payload_structure_variation: 0.9
       crypto_protocol_tamper: 1.2
       auth_context_variation: 1.0
+      password_prehash_tamper: 1.15
     baseline_gap_penalty:
       per_gap: 3.0
       max_total: 15.0
+    interlayer_scoring:
+      state_multipliers:
+        no_interlayer: 1.0
+        interlayer_effective: 1.0
+        interlayer_invalid: 1.25
+      endpoint_penalties:
+        no_interlayer: 0.0
+        interlayer_effective: 0.0
+        interlayer_invalid: 2.0
     layer_score_weights:
       protocol: 0.5
       business: 0.5
@@ -55,23 +67,35 @@ profiles:
       default: 1.0
       cryptography: 1.35
       authentication: 1.15
+      credential_handling: 1.2
       configuration: 0.75
     scenario_status_penalties:
-      LOCAL_FAILED: 2.2
-      SKIPPED: 2.2
+      LOCAL_FAILED: 0.0
+      SKIPPED: 0.0
       LOCAL_OK: 0.0
-      REMOTE_SENT: 0.0
-    scenario_category_multipliers:
+      REMOTE_SENT: 1.0
+      SPECIAL_PATH: 0.0
+    expectation_mismatch_penalties:
       default: 1.0
-      baseline_replay: 1.0
+      baseline_replay: 3.5
       plaintext_mutation: 1.0
       boundary_anomaly: 0.75
       payload_structure_variation: 0.9
       crypto_protocol_tamper: 1.35
       auth_context_variation: 1.05
+      password_prehash_tamper: 1.15
     baseline_gap_penalty:
       per_gap: 3.5
       max_total: 18.0
+    interlayer_scoring:
+      state_multipliers:
+        no_interlayer: 1.0
+        interlayer_effective: 1.0
+        interlayer_invalid: 1.3
+      endpoint_penalties:
+        no_interlayer: 0.0
+        interlayer_effective: 0.0
+        interlayer_invalid: 2.5
     layer_score_weights:
       protocol: 0.7
       business: 0.3
@@ -92,23 +116,35 @@ profiles:
       default: 1.0
       cryptography: 1.3
       authentication: 1.15
+      credential_handling: 1.2
       configuration: 0.9
     scenario_status_penalties:
-      LOCAL_FAILED: 1.8
-      SKIPPED: 1.6
+      LOCAL_FAILED: 0.0
+      SKIPPED: 0.0
       LOCAL_OK: 0.0
-      REMOTE_SENT: 0.0
-    scenario_category_multipliers:
-      default: 1.0
-      baseline_replay: 0.9
-      plaintext_mutation: 1.15
-      boundary_anomaly: 0.85
+      REMOTE_SENT: 1.0
+      SPECIAL_PATH: 0.0
+    expectation_mismatch_penalties:
+      default: 7.0
+      baseline_replay: 9.8
+      plaintext_mutation: 8.8
+      boundary_anomaly: 7.2
       payload_structure_variation: 0.95
-      crypto_protocol_tamper: 1.25
-      auth_context_variation: 1.05
+      crypto_protocol_tamper: 9.2
+      auth_context_variation: 8.3
+      password_prehash_tamper: 8.0
     baseline_gap_penalty:
       per_gap: 2.5
       max_total: 12.0
+    interlayer_scoring:
+      state_multipliers:
+        no_interlayer: 1.0
+        interlayer_effective: 1.0
+        interlayer_invalid: 1.25
+      endpoint_penalties:
+        no_interlayer: 0.0
+        interlayer_effective: 0.0
+        interlayer_invalid: 2.0
     layer_score_weights:
       protocol: 0.55
       business: 0.45

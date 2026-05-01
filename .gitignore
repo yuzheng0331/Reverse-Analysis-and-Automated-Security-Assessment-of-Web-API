@@ -84,9 +84,10 @@ collect/collected_js/
 collect/static_analysis/
 report/
 baseline_samples/
+runtime/api_lab_builder
 
 # -----------------------------------------------------------------------------
-# Negated Rules for Tracking Specific Files
+# Negated Rules for Tracking Specific Files in Output Directories
 # -----------------------------------------------------------------------------
 !baseline_samples/README.md
 !baseline_samples/说明.md
@@ -96,6 +97,12 @@ baseline_samples/
 !collect/static_analysis/说明.md
 !report/README.md
 !report/说明.md
+
+# -----------------------------------------------------------------------------
+# plan Files
+# -----------------------------------------------------------------------------
+plan-api-batch-generation.md
+plan-reverseAnalysisPipeline.prompt.md
 
 # -----------------------------------------------------------------------------
 # Sensitive Files
@@ -124,6 +131,7 @@ coverage.xml
 assess/test_report_gen_formatting.py
 assess/test_assess_endpoint_expectations.py
 assess/test_assess_endpoint_interlayers.py
+scripts/api_lab_builder/test_*
 # -----------------------------------------------------------------------------
 # Documentation Build
 # -----------------------------------------------------------------------------

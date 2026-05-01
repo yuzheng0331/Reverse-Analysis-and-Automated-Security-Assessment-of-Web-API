@@ -75,5 +75,5 @@ def test_layer1_generate_outputs_pool_and_reports(tmp_path: Path) -> None:
     with open(out_dir / "layer1_pool.json", "r", encoding="utf-8") as handle:
         rows = json.load(handle)
     assert all(r["site_group"] == "SITE_A" for r in rows)
-    assert set(r["route_variant"] for r in rows) <= {"PLAIN_ROUTE", "WEAK_OBF_ROUTE"}
+    assert set(r["route_variant"] for r in rows) == {"PLAIN_ROUTE"}
 

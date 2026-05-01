@@ -4,11 +4,141 @@ global:
     - PLAIN_ROUTE
     - WEAK_OBF_ROUTE
   algorithm_whitelist:
-    - DES_CBC
-    - AES_CBC
+    - DES
+    - AES
     - RSA_ONLY
     - AES_RSA_ENVELOPE
     - PLAINTEXT_HMAC
+
+# 全维度统一字段规则：先定义全集，再由各 layer 冻结/启用。
+field_rules:
+  algorithm_stack:
+    values: [DES, AES, RSA_ONLY, AES_RSA_ENVELOPE, PLAINTEXT_HMAC]
+  algo_params:
+    key_size: [64, 128, 192, 256, 1024, 2048]
+    mode: [CBC]
+    # absent: 显式占位（无 IV 语义）；server_fetch: IV 由服务端中间接口下发
+    iv_policy: [absent, static, random, derived, server_fetch]
+    padding: [Pkcs7, ZeroPadding]
+    plaintext_encoding: [utf8, json-string, base64-pre-encoded]
+    key_encoding: [utf8, hex]
+    iv_encoding: [utf8, hex]
+  material_source:
+    values: [FRONTEND_HARDCODED, FRONTEND_DERIVED, SERVER_INTERMEDIATE_FETCH]
+  material_dynamicity_profile:
+    STATIC_LOCAL:
+      key: static
+      iv: static
+      nonce: absent
+      timestamp: absent
+      signature: absent
+    NONCE_TIMESTAMP:
+      key: static
+      iv: static
+      nonce: dynamic
+      timestamp: dynamic
+      signature: absent
+    NONCE_TIMESTAMP_SIGNATURE:
+      key: static
+      iv: static
+      nonce: dynamic
+      timestamp: dynamic
+      signature: dynamic
+    SERVER_KEY_IV:
+      key: dynamic
+      iv: dynamic
+      nonce: dynamic
+      timestamp: dynamic
+      signature: dynamic
+  # 以 material_dynamicity_profile 为主驱动，其余字段由规则约束。
+  dependency_constraints:
+    - if: {material_dynamicity_profile: STATIC_LOCAL}
+      then:
+        material_source: [FRONTEND_HARDCODED, FRONTEND_DERIVED]
+        algo_params.iv_policy: [static]
+    - if: {material_dynamicity_profile: NONCE_TIMESTAMP}
+      then:
+        material_source: [FRONTEND_DERIVED, SERVER_INTERMEDIATE_FETCH]
+        algo_params.iv_policy: [static, random, derived, server_fetch]
+    - if: {material_dynamicity_profile: NONCE_TIMESTAMP_SIGNATURE}
+      then:
+        material_source: [FRONTEND_DERIVED, SERVER_INTERMEDIATE_FETCH]
+        algo_params.iv_policy: [static, random, derived, server_fetch]
+    - if: {material_dynamicity_profile: SERVER_KEY_IV}
+      then:
+        material_source: [SERVER_INTERMEDIATE_FETCH]
+        algo_params.iv_policy: [server_fetch]
+    - if: {anti_replay: none}
+      then:
+        session_policy.binding: [no_bind, bind_cookie]
+    - if: {anti_replay: nonce_timestamp_signature}
+      then:
+        material_dynamicity_profile: [NONCE_TIMESTAMP_SIGNATURE, SERVER_KEY_IV]
+        session_policy.binding: [no_bind, bind_cookie]
+    - if: {anti_replay: nonce_timestamp_signature_session_binding}
+      then:
+        material_dynamicity_profile: [NONCE_TIMESTAMP_SIGNATURE, SERVER_KEY_IV]
+        session_policy.binding: [bind_cookie]
+  packaging:
+    type: [urlencoded, json, template]
+    field_policy: [normal, alias, redundant]
+  transport:
+    content_type: [application/x-www-form-urlencoded, application/json]
+    key_location: [body, header]
+
+# 各层激活蓝图：不生效字段由 frozen_defaults 固定，后续层再放开枚举。
+layer_blueprint:
+  layer1:
+    active_dimensions: [2.1, 2.2, 2.5]
+    active_fields:
+      - algorithm_stack
+      - algo_params.key_size
+      - algo_params.mode
+      - algo_params.iv_policy
+      - algo_params.padding
+      - algo_params.plaintext_encoding
+      - algo_params.key_encoding
+      - algo_params.iv_encoding
+      - anti_replay
+      - signature_strategy.placement
+    frozen_defaults:
+      interlayers: []
+      material_source: FRONTEND_HARDCODED
+      material_dynamicity_profile: STATIC_LOCAL
+      packaging_type: urlencoded
+      field_policy: normal
+      content_type: application/x-www-form-urlencoded
+      key_location: body
+  layer2:
+    active_dimensions: [2.3, 2.5, 2.8]
+    active_fields:
+      - material_source
+      - material_dynamicity_profile
+      - anti_replay
+      - session_policy.binding
+      - signature_strategy.placement
+      - packaging_type
+      - field_policy
+      - content_type
+      - key_location
+    frozen_defaults:
+      interlayers: []
+  layer3:
+    active_dimensions: [2.9]
+    active_fields:
+      - risk_tags
+      - template_level
+    frozen_defaults: {}
+  layer4:
+    active_dimensions: [2.7]
+    active_fields:
+      - route_variant
+    frozen_defaults: {}
+  layer5:
+    # 兼容旧脚本占位：主流程已迁移到 layer4 处理 2.7。
+    active_dimensions: []
+    active_fields: []
+    frozen_defaults: {}
 
 constraints:
   max_interlayers: 5
@@ -16,12 +146,11 @@ constraints:
     - UNSUPPORTED_COMPLEX_CUSTOM_CRYPTO
 
 layer1:
-  # Layer1: 按算法分支做条件乘积求和，产出基础稳定池。
+  # Layer1: 按算法分支做条件组合，固定 2.3/2.8 为冻结默认值。
   fixed:
-    validation_hops: single_hop
     interlayers: []
   algorithms:
-    AES_CBC:
+    AES:
       base:
         material_source: FRONTEND_HARDCODED
         material_dynamicity:
@@ -30,8 +159,7 @@ layer1:
           nonce: absent
           timestamp: absent
           signature: absent
-        risk_tags:
-          - BASELINE_STABLE
+        risk_tags: [BASELINE_STABLE]
         template_level: BASELINE
       matrix:
         key_size: [128, 192, 256]
@@ -40,8 +168,28 @@ layer1:
         padding: [Pkcs7, ZeroPadding]
         plaintext_encoding: [utf8, json-string]
         key_encoding: [utf8, hex]
-        iv_encoding: [utf8, base64]
+        iv_encoding: [utf8, hex]
         anti_replay: [none, timestamp_only, nonce_only, nonce_timestamp]
+    DES:
+      base:
+        material_source: FRONTEND_HARDCODED
+        material_dynamicity:
+          key: static
+          iv: static
+          nonce: absent
+          timestamp: absent
+          signature: absent
+        risk_tags: [BASELINE_STABLE, WEAK_ALGO]
+        template_level: BASELINE
+      matrix:
+        key_size: [64]
+        mode: [CBC]
+        iv_policy: [static]
+        padding: [Pkcs7]
+        plaintext_encoding: [utf8, json-string]
+        key_encoding: [utf8, hex]
+        iv_encoding: [utf8, hex]
+        anti_replay: [none, timestamp_only]
     RSA_ONLY:
       base:
         material_source: FRONTEND_HARDCODED
@@ -51,8 +199,7 @@ layer1:
           nonce: absent
           timestamp: absent
           signature: absent
-        risk_tags:
-          - BASELINE_STABLE
+        risk_tags: [BASELINE_STABLE]
         template_level: BASELINE
       matrix:
         key_size: [1024, 2048]
@@ -69,13 +216,208 @@ layer1:
           signature: dynamic
         session_policy:
           binding: no_bind
-        risk_tags:
-          - BASELINE_STABLE
+        risk_tags: [BASELINE_STABLE]
         template_level: BASELINE
       matrix:
         plaintext_encoding: [utf8, json-string]
         anti_replay: [nonce_only, nonce_timestamp]
         signature_placement: [header, body, query]
+    AES_RSA_ENVELOPE:
+      base:
+        material_source: FRONTEND_DERIVED
+        material_dynamicity:
+          key: dynamic
+          iv: dynamic
+          nonce: absent
+          timestamp: dynamic
+          signature: absent
+        risk_tags: [BASELINE_STABLE, MIXED_CRYPTO]
+        template_level: BASELINE
+      matrix:
+        key_size: [128, 256]
+        mode: [CBC]
+        iv_policy: [random]
+        padding: [Pkcs7]
+        plaintext_encoding: [utf8, json-string]
+        anti_replay: [none, timestamp_only]
+
+layer2:
+  # Layer2: 在 Layer1 典型样本基础上增量扩展 2.3 + 2.5 + 2.8。
+  source_pool: layer1_pool.yaml
+  base_filter:
+    route_variant: PLAIN_ROUTE
+  representative_seed:
+    enabled: true
+    per_algorithm: 3
+    prefer_risk_tags: [BASELINE_STABLE]
+  dimensions:
+    material_source:
+      - SERVER_INTERMEDIATE_FETCH
+    material_dynamicity_profile:
+      - NONCE_TIMESTAMP
+      - NONCE_TIMESTAMP_SIGNATURE
+      - SERVER_KEY_IV
+    anti_replay:
+      - none
+      - nonce_timestamp_signature
+      - nonce_timestamp_signature_session_binding
+    session_policy.binding:
+      - bind_cookie
+      - no_bind
+    algo_params.iv_policy:
+      - derived
+      - server_fetch
+    signature_strategy.placement:
+      - body
+      - header
+    algo_params.plaintext_encoding:
+      - utf8
+      - base64-pre-encoded
+    packaging_type:
+      - urlencoded
+      - json
+    field_policy:
+      - normal
+      - alias
+    content_type:
+      - application/x-www-form-urlencoded
+      - application/json
+    key_location:
+      - body
+      - header
+  profile_map:
+    NONCE_TIMESTAMP:
+      key: static
+      iv: static
+      nonce: dynamic
+      timestamp: dynamic
+      signature: absent
+    NONCE_TIMESTAMP_SIGNATURE:
+      key: static
+      iv: static
+      nonce: dynamic
+      timestamp: dynamic
+      signature: dynamic
+    SERVER_KEY_IV:
+      key: dynamic
+      iv: dynamic
+      nonce: dynamic
+      timestamp: dynamic
+      signature: dynamic
+  coverage:
+    # 仍保持 3-wise，但通过配额控制总量。
+    strength: 3
+    max_selected_per_base: 28
+    enforce_value_coverage_fields:
+      - anti_replay
+      - session_policy.binding
+      - packaging_type
+      - field_policy
+      - content_type
+      - key_location
+      - signature_strategy.placement
+      - algo_params.plaintext_encoding
+  constraints:
+    enforce_content_type_match: true
+
+layer3:
+  # Layer3：可评估弱设计对比层（2.9），在 Layer2 基础上做 1-wise 风险注入并强制同构对照映射。
+  source_pool: layer2_pool.yaml
+  base_filter:
+    route_variant: PLAIN_ROUTE
+  representative_seed:
+    enabled: true
+    per_algorithm: 3
+    prefer_risk_tags: [BASELINE_STABLE]
+  templates:
+    - name: BASELINE_NO_SHIFT
+      template_level: BASELINE
+      risk_tags: []
+    - name: WEAK_SHIFT_L1
+      template_level: L1
+      risk_tags: [WEAK_SHIFT_L1]
+    - name: WEAK_SHIFT_L2
+      template_level: L2
+      risk_tags: [WEAK_SHIFT_L2]
+    - name: WEAK_SHIFT_L3
+      template_level: L3
+      risk_tags: [WEAK_SHIFT_L3]
+  weak_design_options:
+    # 仅保留“评估器当前可识别（或小幅优化后可识别）”项。
+    - name: L3_WEAK_DES
+      detection_source: static
+      detection_signals: [CRYPTO_WEAK_DES]
+      apply:
+        algorithm_stack: [DES]
+        append_risk_tags: [WEAK_ALGO]
+    - name: L3_HARDCODED_KEY
+      detection_source: static
+      detection_signals: [CRYPTO_HARDCODED_KEY]
+      apply:
+        force_runtime_args:
+          setkey.key: HARDCODED_KEY
+        append_risk_tags: [HARDCODED_KEY]
+    - name: L3_STATIC_IV
+      detection_source: static
+      detection_signals: [CRYPTO_STATIC_IV]
+      apply:
+        force_runtime_args:
+          setiv.iv: STATIC_IV
+        append_risk_tags: [STATIC_IV]
+    - name: L3_SIGN_RULE_MISSING
+      detection_source: static_dynamic
+      detection_signals: [MISSING_SIGN_INPUT_RULE, AUTH_SIGNATURE_BYPASS_RISK]
+      apply:
+        drop_sign_input_rule: true
+        append_risk_tags: [SIGN_RULE_MISSING]
+    - name: L3_SESSION_BINDING_MISSING
+      detection_source: dynamic_response
+      detection_signals: [AUTH_SESSION_BINDING_MISSING]
+      apply:
+        anti_replay: [nonce_timestamp_signature_session_binding]
+        session_policy.binding: [no_bind]
+        append_risk_tags: [SESSION_BINDING_MISSING]
+    - name: L3_INTERLAYER_WEAK_EFFECT
+      detection_source: response
+      detection_signals: [interlayer_invalid]
+      apply:
+        interlayers: [HEADER_SIGN_LAYER, ENCODING_LAYER]
+        append_risk_tags: [INTERLAYER_WEAK_EFFECT]
+  control_mapping:
+    enabled: true
+    # Layer3 必须与 Layer1/Layer2 建立同构对照关系。
+    required: true
+    match_keys:
+      - algorithm_stack
+      - anti_replay
+      - packaging_type
+      - field_policy
+      - content_type
+      - key_location
+    output_file: layer3_control_mapping.json
+  metrics:
+    # Layer3 可解释性三指标
+    detect_rate:
+      enabled: true
+      formula: detected_weak_design/total_layer3_weak_design
+    delta_score:
+      enabled: true
+      formula: score(control_L1L2)-score(layer3_variant)
+    isg:
+      enabled: true
+      formula: RejectLikeRate(interlayer)-RejectLikeRate(control)
+      reject_like_modes: [APP_INVALID_INPUT, APP_MISSING_DATA, APP_DECRYPT_FAIL, APP_REJECTED, HTTP_4XX]
+  gate:
+    detectable_weak_ratio_min: 0.90
+  constraints:
+    max_risk_tags: 5
+  coverage:
+    strategy: onewise_risk_injection
+    max_selected_per_base: 6
+    prefer_weak_options: [L3_SIGN_RULE_MISSING, L3_SESSION_BINDING_MISSING, L3_INTERLAYER_WEAK_EFFECT]
+    enforce_value_coverage_fields:
+      - template_level
+      - risk_tags
 
 output:
   directory: runtime/api_lab_builder
@@ -86,4 +428,70 @@ output:
   layer1_pool_json: layer1_pool.json
   layer1_gate_report: layer1_gate_report.json
   layer1_pruned_reasons: layer1_pruned_reasons.jsonl
+  layer2_pool_yaml: layer2_pool.yaml
+  layer2_pool_json: layer2_pool.json
+  layer2_gate_report: layer2_gate_report.json
+  layer2_pruned_reasons: layer2_pruned_reasons.jsonl
+  layer3_pool_yaml: layer3_pool.yaml
+  layer3_pool_json: layer3_pool.json
+  layer3_gate_report: layer3_gate_report.json
+  layer3_pruned_reasons: layer3_pruned_reasons.jsonl
+  layer3_control_mapping: layer3_control_mapping.json
+
+writer:
+  layer1:
+    # 先抽样写入并测试，通过后再进行全量写入
+    sample_size_per_algorithm: 5
+    sample_pool_yaml: layer1_sample_pool.yaml
+    sample_gate_report: layer1_sample_gate_report.json
+    sample_manifest: layer1_sample_write_manifest.json
+    full_manifest: layer1_full_write_manifest.json
+    api_name_prefix: layer1
+    generated_page_php: generated_layer1_sample.php
+    generated_js_file: generated_layer1_sample.js
+    templates:
+      php: easy.php
+      js: js/easy.js
+    defaults:
+      username: test_user
+      password: test_pass
+      success_username: admin
+      success_password: '123456'
+
+  layer2:
+    # Layer2 与 layer1 平行写入，避免测试样本串联。
+    sample_size_per_algorithm: 5
+    sample_pool_yaml: layer2_sample_pool.yaml
+    sample_gate_report: layer2_sample_gate_report.json
+    sample_manifest: layer2_sample_write_manifest.json
+    full_manifest: layer2_full_write_manifest.json
+    api_name_prefix: layer2
+    generated_page_php: generated_layer2_sample.php
+    generated_js_file: generated_layer2_sample.js
+    templates:
+      php: easy.php
+      js: js/easy.js
+    defaults:
+      username: test_user
+      password: test_pass
+      success_username: admin
+      success_password: '123456'
+
+  layer3:
+    sample_size_per_algorithm: 4
+    sample_pool_yaml: layer3_sample_pool.yaml
+    sample_gate_report: layer3_sample_gate_report.json
+    sample_manifest: layer3_sample_write_manifest.json
+    full_manifest: layer3_full_write_manifest.json
+    api_name_prefix: layer3
+    generated_page_php: generated_layer3_sample.php
+    generated_js_file: generated_layer3_sample.js
+    templates:
+      php: easy.php
+      js: js/easy.js
+    defaults:
+      username: test_user
+      password: test_pass
+      success_username: admin
+      success_password: '123456'
 

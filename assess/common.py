@@ -12,7 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-import yaml
+try:
+    import yaml
+except ImportError:  # pragma: no cover
+    yaml = None
 
 
 def utc_now() -> str:
@@ -24,6 +27,15 @@ def load_json_file(path: Path) -> Any:
     """读取 JSON 文件。"""
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def load_yaml_file(path: Path) -> Any:
+    """读取 YAML 文件。"""
+    if yaml is None:
+        raise ImportError("缺少 PyYAML 依赖，无法读取 YAML 文件。")
+    with open(path, "r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle)
+    return {} if data is None else data
 
 
 def save_json_file(path: Path, data: Any) -> None:
@@ -56,7 +68,3 @@ def safe_json_dumps(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
 
 
-def load_yaml_file(path: Path) -> Any:
-    """读取 YAML 文件。"""
-    with open(path, "r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle)

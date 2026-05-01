@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import sys
 from pathlib import Path
 from typing import Any
 
-from scripts.api_lab_builder.common import PruneRecord, append_jsonl, dedupe_key, dump_json, dump_yaml, load_yaml
-
 BASE_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(BASE_DIR))
+
+from scripts.api_lab_builder.common import PruneRecord, append_jsonl, dedupe_key, dump_json, dump_yaml, load_yaml
 
 
 def _product_dict(matrix: dict[str, list[Any]]) -> list[dict[str, Any]]:
@@ -49,25 +51,22 @@ def _make_spec(algorithm: str, base: dict[str, Any], fixed: dict[str, Any], row:
     return spec
 
 
-def _expand_routes(spec: dict[str, Any], cfg: dict[str, Any], seq: int) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for route in cfg["global"]["allowed_route_variants"]:
-        item = dict(spec)
-        item["algo_params"] = dict(spec.get("algo_params", {}))
-        item["material_dynamicity"] = dict(spec.get("material_dynamicity", {}))
-        item["risk_tags"] = list(spec.get("risk_tags", []))
-        if "interlayers" in spec:
-            item["interlayers"] = list(spec.get("interlayers", []))
-        if "signature_strategy" in spec:
-            item["signature_strategy"] = dict(spec.get("signature_strategy", {}))
-        if "session_policy" in spec:
-            item["session_policy"] = dict(spec.get("session_policy", {}))
+def _materialize_layer1_item(spec: dict[str, Any], cfg: dict[str, Any], seq: int) -> dict[str, Any]:
+    item = dict(spec)
+    item["algo_params"] = dict(spec.get("algo_params", {}))
+    item["material_dynamicity"] = dict(spec.get("material_dynamicity", {}))
+    item["risk_tags"] = list(spec.get("risk_tags", []))
+    item["interlayers"] = list(spec.get("interlayers", []))
+    if "signature_strategy" in spec:
+        item["signature_strategy"] = dict(spec.get("signature_strategy", {}))
+    if "session_policy" in spec:
+        item["session_policy"] = dict(spec.get("session_policy", {}))
 
-        item["route_variant"] = route
-        item["site_group"] = cfg["global"]["fixed_site_group"]
-        item["id"] = f"layer1_{seq:05d}_{route.lower()}"
-        out.append(item)
-    return out
+    # Layer1 不展开 2.7 路由维度，固定为基础路由，Layer5 再做翻倍展开。
+    item["route_variant"] = "PLAIN_ROUTE"
+    item["site_group"] = cfg["global"]["fixed_site_group"]
+    item["id"] = f"layer1_{seq:05d}"
+    return item
 
 
 def _check_conflicts(spec: dict[str, Any], cfg: dict[str, Any]) -> list[PruneRecord]:
@@ -76,6 +75,45 @@ def _check_conflicts(spec: dict[str, Any], cfg: dict[str, Any]) -> list[PruneRec
     algo = str(spec.get("algorithm_stack", ""))
     params = spec.get("algo_params", {}) if isinstance(spec.get("algo_params"), dict) else {}
     dynamic = spec.get("material_dynamicity", {}) if isinstance(spec.get("material_dynamicity"), dict) else {}
+    anti_replay = str(spec.get("anti_replay", ""))
+    signature_strategy = spec.get("signature_strategy", {}) if isinstance(spec.get("signature_strategy"), dict) else {}
+    session_policy = spec.get("session_policy", {}) if isinstance(spec.get("session_policy"), dict) else {}
+
+    # 兼容“原语链命名 + 历史命名”
+    is_aes = algo in {"AES", "AES_CBC"}
+    is_des = algo in {"DES", "DES_CBC"}
+    is_rsa_only = algo == "RSA_ONLY"
+    is_plain_hmac = algo == "PLAINTEXT_HMAC"
+
+    # 字段唯一归属：algo_params 只能承载算法参数
+    forbidden_param_keys = {
+        "anti_replay",
+        "material_source",
+        "material_dynamicity",
+        "signature_strategy",
+        "session_policy",
+        "signature_placement",
+    }
+    touched_forbidden = sorted(k for k in params.keys() if k in forbidden_param_keys)
+    if touched_forbidden:
+        errors.append(
+            PruneRecord(
+                spec_id,
+                "CONFLICT_FIELD_OWNERSHIP_ALGO_PARAMS",
+                f"algo_params 出现越权字段: {','.join(touched_forbidden)}",
+            )
+        )
+
+    # signature_strategy 仅允许 coverage/placement
+    invalid_sig_keys = sorted(k for k in signature_strategy.keys() if k not in {"coverage", "placement"})
+    if invalid_sig_keys:
+        errors.append(
+            PruneRecord(
+                spec_id,
+                "CONFLICT_FIELD_OWNERSHIP_SIGNATURE_STRATEGY",
+                f"signature_strategy 非法字段: {','.join(invalid_sig_keys)}",
+            )
+        )
 
     if algo not in set(cfg["global"]["algorithm_whitelist"]):
         errors.append(PruneRecord(spec_id, "SCHEMA_ALGO_NOT_ALLOWED", f"算法不在白名单: {algo}"))
@@ -83,22 +121,52 @@ def _check_conflicts(spec: dict[str, Any], cfg: dict[str, Any]) -> list[PruneRec
     if str(spec.get("route_variant", "")) not in set(cfg["global"]["allowed_route_variants"]):
         errors.append(PruneRecord(spec_id, "SCHEMA_ROUTE_NOT_ALLOWED", "route_variant 不在允许集合"))
 
-    if algo == "AES_CBC" and str(params.get("iv_policy", "absent")) == "absent":
-        errors.append(PruneRecord(spec_id, "CONFLICT_AES_CBC_IV_ABSENT", "AES_CBC 要求 iv_policy != absent"))
+    if (is_aes or is_des) and str(params.get("mode", "")) == "":
+        errors.append(PruneRecord(spec_id, "CONFLICT_SYMMETRIC_MODE_MISSING", "AES/DES 必须声明 mode"))
 
-    if algo == "RSA_ONLY":
+    if is_aes or is_des:
+        mode = str(params.get("mode", "")).upper()
+        if mode in {"CBC", "CFB", "OFB", "CTR"} and str(params.get("iv_policy", "absent")) == "absent":
+            errors.append(
+                PruneRecord(spec_id, "CONFLICT_SYMMETRIC_IV_ABSENT", "对称算法在该 mode 下要求 iv_policy != absent")
+            )
+
+    if is_rsa_only:
         blocked = [k for k in ["mode", "iv_policy", "padding"] if k in params]
         if blocked:
             errors.append(PruneRecord(spec_id, "CONFLICT_RSA_ONLY_SYMMETRIC_PARAMS", f"RSA_ONLY 禁止参数: {','.join(blocked)}"))
 
-    if algo == "PLAINTEXT_HMAC":
-        placement = str(spec.get("signature_strategy", {}).get("placement", ""))
+    if is_plain_hmac:
+        blocked = [k for k in ["key_size", "mode", "iv_policy", "padding"] if k in params]
+        if blocked:
+            errors.append(
+                PruneRecord(spec_id, "CONFLICT_HMAC_SYMMETRIC_PARAMS", f"PLAINTEXT_HMAC 禁止参数: {','.join(blocked)}")
+            )
+
+        placement = str(signature_strategy.get("placement", ""))
         if placement not in {"body", "header", "query"}:
             errors.append(PruneRecord(spec_id, "CONFLICT_HMAC_NO_PLACEMENT", "HMAC 需要签名放置位置"))
 
-    if str(spec.get("anti_replay", "")) == "nonce_timestamp_signature_session_binding":
-        missing = [k for k in ["nonce", "timestamp", "signature"] if str(dynamic.get(k, "absent")) == "absent"]
-        if str(spec.get("session_policy", {}).get("binding", "")) != "bind_cookie":
+    def _dyn_missing(name: str) -> bool:
+        return str(dynamic.get(name, "absent")) == "absent"
+
+    if anti_replay == "timestamp_only" and _dyn_missing("timestamp"):
+        errors.append(PruneRecord(spec_id, "CONFLICT_ANTI_REPLAY_TIMESTAMP_MISSING", "timestamp_only 缺少 timestamp"))
+
+    if anti_replay == "nonce_only" and _dyn_missing("nonce"):
+        errors.append(PruneRecord(spec_id, "CONFLICT_ANTI_REPLAY_NONCE_MISSING", "nonce_only 缺少 nonce"))
+
+    if anti_replay == "nonce_timestamp":
+        missing = [k for k in ["nonce", "timestamp"] if _dyn_missing(k)]
+        if missing:
+            errors.append(PruneRecord(spec_id, "CONFLICT_ANTI_REPLAY_NONCE_TIMESTAMP_MISSING", f"依赖缺失: {','.join(missing)}"))
+
+    if anti_replay in {"nonce_timestamp_signature", "nonce_timestamp_signature_session_binding"}:
+        missing = [k for k in ["nonce", "timestamp", "signature"] if _dyn_missing(k)]
+        placement = str(signature_strategy.get("placement", ""))
+        if placement not in {"body", "header", "query"}:
+            missing.append("signature_placement")
+        if anti_replay == "nonce_timestamp_signature_session_binding" and str(session_policy.get("binding", "")) != "bind_cookie":
             missing.append("session_binding")
         if missing:
             errors.append(PruneRecord(spec_id, "CONFLICT_ANTI_REPLAY_INCOMPLETE", f"依赖缺失: {','.join(missing)}"))
@@ -124,7 +192,8 @@ def run_layer1_generate(config_path: Path, output_dir: Path | None = None) -> di
     out_root.mkdir(parents=True, exist_ok=True)
 
     fixed = cfg["layer1"]["fixed"]
-    order = ["AES_CBC", "RSA_ONLY", "PLAINTEXT_HMAC"]
+    # 兼容新旧命名：优先原语链，兼容历史键
+    order = ["AES", "AES_CBC", "DES", "DES_CBC", "RSA_ONLY", "AES_RSA_ENVELOPE", "PLAINTEXT_HMAC"]
 
     candidates: list[dict[str, Any]] = []
     seq = 1
@@ -136,9 +205,8 @@ def run_layer1_generate(config_path: Path, output_dir: Path | None = None) -> di
         matrix = item["matrix"]
         for row in _product_dict(matrix):
             spec = _make_spec(algorithm, base, fixed, row)
-            expanded = _expand_routes(spec, cfg, seq)
+            candidates.append(_materialize_layer1_item(spec, cfg, seq))
             seq += 1
-            candidates.extend(expanded)
 
     prune_records: list[PruneRecord] = []
     passed_conflict: list[dict[str, Any]] = []
@@ -211,4 +279,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 

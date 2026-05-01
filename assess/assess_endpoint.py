@@ -139,7 +139,7 @@ SCENARIO_LAYER_MAP = {
     "crypto_protocol_tamper": "protocol",
     "password_prehash_tamper": "protocol",
     "plaintext_mutation": "business",
-    "boundary_anomaly": "business",
+    "boundary_anomaly": "protocol",
     "payload_structure_variation": "business",
     "auth_context_variation": "business",
 }
@@ -2262,9 +2262,16 @@ class BaselineAssessmentEngine:
             ]:
                 scenario_modes[sid] = _unique(scenario_modes[sid] + ["APP_DECRYPT_FAIL"])
 
-        # 仅在防重放敏感端点保留 stale timestamp 的 missing_data 容忍，其他端点继续收敛。
+        # 仅在防重放敏感端点保留  missing_data 容忍，其他端点继续收敛。
         if anti_replay_sensitive or anti_replay_mechanism != "none":
-            scenario_modes["crypto_stale_timestamp"] = _unique(scenario_modes["crypto_stale_timestamp"] + ["APP_MISSING_DATA"])
+            for sid in [
+                "plaintext_mutation_sqli",
+                "payload_type_confusion",
+                "special_chars_payload",
+                "auth_context_variation",
+                "payload_missing_field",
+            ]:
+                scenario_modes[sid] = _unique(scenario_modes[sid] + ["APP_MISSING_DATA"])
 
         def _modes(scenario_id: str) -> list[str]:
             return list(scenario_modes.get(scenario_id, ["APP_INVALID_INPUT", "APP_REJECTED", "HTTP_4XX", "HTTP_OK_OTHER"]))
@@ -3720,15 +3727,13 @@ class BaselineAssessmentEngine:
             scenario_budget_total += max(base_mismatch_penalty, 0.0)
             scored_pool.append(scenario)
 
-            status_weight = float(scenario_status_penalties.get(status, scenario_status_penalties.get("default", 0.0)))
-            if bool(remote_result.get("attempted")) and status_weight > 0:
-                participants.append(scenario)
-
-        per_participant_penalty = round(scenario_budget_total / len(participants), 2) if participants else 0.0
+            
+        
 
         for scenario in scenarios:
             status = str(scenario.get("status", "LOCAL_OK"))
             category = str(scenario.get("category", "default"))
+            category_multiplier = self._lookup_weight(scenario_category_multipliers, category, 1.0)
             skip_code = self._skip_reason_code(scenario.get("skip_reason"))
             expectation = scenario.get("expectation", {}) or {}
             remote_result = scenario.get("remote_result", {}) or {}
@@ -3749,9 +3754,10 @@ class BaselineAssessmentEngine:
                 continue
 
             mismatch_hit = bool(expectation.get("defined")) and expectation.get("matched") is False
-            if mismatch_hit and per_participant_penalty > 0:
-                weighted_penalty = round(per_participant_penalty * interlayer_multiplier, 2)
-                total_scenarios += weighted_penalty
+            if mismatch_hit :
+                mismatch_penalty = float(expectation_mismatch_penalties.get(category, expectation_mismatch_penalties.get("default", 0.0)))
+                weighted_penalty = round(mismatch_penalty * interlayer_multiplier * category_multiplier / scenario_budget_total * 100, 2)
+                total_scenarios += weighted_penalty 
                 layer_name = SCENARIO_LAYER_MAP.get(category, "business")
                 layer_deductions[layer_name] += weighted_penalty
                 scenario_deductions.append({
@@ -3760,7 +3766,7 @@ class BaselineAssessmentEngine:
                     "category": category,
                     "deduction_reason": "EXPECTATION_MISMATCH",
                     "status_penalty": float(scenario_status_penalties.get(status, scenario_status_penalties.get("default", 0.0))),
-                    "category_multiplier": self._lookup_weight(scenario_category_multipliers, category, 1.0),
+                    "category_multiplier": category_multiplier,
                     "deduction": weighted_penalty,
                     "interlayer_state": interlayer_state,
                     "interlayer_multiplier": interlayer_multiplier,
@@ -3830,7 +3836,6 @@ class BaselineAssessmentEngine:
                 "gate_exempt": len(gate_exempt_scenarios),
                 "scored_pool_size": len(scored_pool),
                 "budget_total": round(scenario_budget_total, 2),
-                "per_participant_penalty": per_participant_penalty,
                 "interlayer_state": interlayer_state,
                 "interlayer_multiplier": interlayer_multiplier,
                 "interlayer_endpoint_penalty": interlayer_endpoint_penalty,

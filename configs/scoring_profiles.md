@@ -11,7 +11,7 @@
 它的作用不是决定某个端点是否存在漏洞，而是决定：
 
 1. 不同类型发现的扣分有多大；
-2. 不同场景失败或跳过时的惩罚有多大；
+2. 在线场景预期未命中时如何扣分；
 3. 不同研究口径下，最终分数应该更偏向“密码学风险”还是“执行稳定性”。
 
 也就是说：
@@ -139,7 +139,7 @@
 
 ### `scenario_status_penalties`
 - 类型：对象
-- 作用：定义不同场景执行状态的基础惩罚值。
+- 作用：定义不同场景状态是否参与“远程命中扣分权重池”。
 
 常见字段：
 - `LOCAL_FAILED`
@@ -148,17 +148,15 @@
 - `REMOTE_SENT`
 
 #### 语义
-- `LOCAL_FAILED`：本地无法完成该场景重建，通常应扣分
-- `SKIPPED`：该场景因请求体格式或字段缺失等原因跳过，通常也应扣分
-- `LOCAL_OK`：本地成功完成，一般不扣分
-- `REMOTE_SENT`：场景已真实发送，一般不扣分
+- `LOCAL_FAILED` / `SKIPPED` / `LOCAL_OK`：通常设为 `0.0`，不进入远程扣分池。
+- `REMOTE_SENT`：通常设为 `1.0`，表示“成功发起远程请求”的场景参与扣分池。
+- 门控免罚场景（如 `UNMUTATABLE`、`MUTATION_NOT_EFFECTIVE`）不参与扣分池。
 
 ---
 
 ### `scenario_category_multipliers`
 - 类型：对象
-- 作用：定义不同场景类别的系数。
-- 说明：用于体现“某些场景的失败比另一些场景更严重”。
+- 作用：保留场景类别系数配置（用于明细展示与后续差异化策略扩展）。
 
 常见字段：
 - `default`
@@ -169,19 +167,17 @@
 - `crypto_protocol_tamper`
 - `auth_context_variation`
 
-#### 计算方式
-某个场景状态导致的最终扣分：
+#### 当前实现说明
+当前实现先采用“成功发起远程请求场景均分权重”的策略，
+`scenario_category_multipliers` 在评分明细中保留并输出，后续可切换为差异化加权。
 
-`场景状态基础惩罚 × 场景类别系数`
-
-#### 例子
+#### 例子（当前口径）
 如果：
-- `LOCAL_FAILED = 2.0`
-- `crypto_protocol_tamper = 1.2`
+- `expectation_mismatch_penalties.default = 2.0`
+- 一个端点有 10 个“成功发起远程请求”的参与场景
 
-那么一个“协议篡改场景失败”的扣分为：
-
-`2.0 × 1.2 = 2.4`
+则该端点场景预算会先累计，再按参与场景均分；
+某个未命中预期的场景扣分使用该“均分值”。
 
 #### 适用意义
 - 如果你希望论文更强调协议参数篡改的重要性，可以提高 `crypto_protocol_tamper`
@@ -236,6 +232,24 @@
 示例：
 - `protocol: 0.7, business: 0.3` 表示更强调协议层风险。
 
+### `interlayer_scoring`
+- 类型：对象
+- 作用：在不改变远程预期集合的前提下，按夹层状态消费评分信号。
+
+包含字段：
+- `state_multipliers`
+  - `no_interlayer`：无夹层端点的场景未命中乘子（通常为 `1.0`）
+  - `interlayer_effective`：夹层有效端点的场景未命中乘子（通常为 `1.0`）
+  - `interlayer_invalid`：夹层失效端点的场景未命中乘子（通常 > `1.0`）
+- `endpoint_penalties`
+  - `no_interlayer`：端点级附加惩罚（通常为 `0`）
+  - `interlayer_effective`：端点级附加惩罚（通常为 `0`）
+  - `interlayer_invalid`：端点级附加惩罚（建议 > `0`）
+
+说明：
+- 夹层状态由评估引擎根据“关键场景”判定：关键场景中任一失败即 `interlayer_invalid`。
+- 该字段只影响评分权重，不会改写 `expected_outcome.remote_response_modes`。
+
 ---
 
 ## 7. 当前内置 profile 的设计思路
@@ -264,12 +278,12 @@
 
 ### 使用默认 profile
 ```bash
-python assess/assess_endpoint.py --scoring-profile default --weights-file configs/scoring_profiles.yaml
+python assess/assess_endpoint.py --scoring-profile default --scoring-config configs/scoring_profiles.yaml
 ```
 
 ### 使用论文展示 profile
 ```bash
-python assess/assess_endpoint.py --scoring-profile paper_v1 --weights-file configs/scoring_profiles.yaml
+python assess/assess_endpoint.py --scoring-profile paper_v1 --scoring-config configs/scoring_profiles.yaml
 ```
 
 ### 生成报告
@@ -295,8 +309,8 @@ python assess/report_gen.py
 ### 如果你想让系统更强调“自动化完整性”
 建议调高：
 - `baseline_gap_penalty.per_gap`
-- `scenario_status_penalties.SKIPPED`
-- `scenario_status_penalties.LOCAL_FAILED`
+- `expectation_mismatch_penalties.default`
+- `expectation_mismatch_penalties.baseline_replay`
 
 ### 如果你想让分数看起来更“宽松”
 可以：
@@ -325,5 +339,5 @@ python assess/report_gen.py
 
 `scoring_profiles.yaml` 决定的不是“有没有漏洞”，而是：
 
-> **在你的研究口径下，这些漏洞、失败场景和基线缺口应该被赋予多大的风险权重。**
+> **在你的研究口径下，这些漏洞、远程预期未命中场景和基线缺口应该被赋予多大的风险权重。**
 

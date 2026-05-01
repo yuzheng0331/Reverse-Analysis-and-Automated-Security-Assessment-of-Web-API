@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,6 +42,7 @@ def main() -> None:
     log_path = Path(args.log_file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
+    phase1_4_start = time.time()
     with open(log_path, "w", encoding="utf-8", newline="\n") as log_handle:
         emit(f"[总控] UTF-8 日志文件: {log_path}", log_handle)
         emit(f"[总控] 目标页面 URL: {target_url}", log_handle)
@@ -65,6 +67,7 @@ def main() -> None:
         emit("[总控] 阶段4：Handler 正确性验证", log_handle)
         run_phase4(baseline_path, False, log_handle)
 
+        phase1_4_end = time.time()
         emit("[总控] 阶段5：安全评估", log_handle)
         run_phase5(
             baseline_path,
@@ -78,7 +81,11 @@ def main() -> None:
         emit("[总控] 阶段6：生成报告与图表", log_handle)
         run_phase6(baseline_path, "paper_v1", log_handle)
 
+        phase5_6_end = time.time()
         emit(f"[总控] 全链路完成，最终基线: {baseline_path}", log_handle)
+
+    print(f"[总控] 阶段1-4总执行时长: {phase1_4_end - phase1_4_start:.2f} 秒")
+    print(f"[总控] 阶段5-6总执行时长: {phase5_6_end - phase1_4_end:.2f} 秒")
 
 
 if __name__ == "__main__":

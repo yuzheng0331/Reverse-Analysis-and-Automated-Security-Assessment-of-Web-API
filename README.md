@@ -352,6 +352,38 @@ python scripts/debug_endpoint_packets.py --endpoint-id aes --scenario-id payload
 - **诊断性**：基线重放必须成功，否则扣分。
 - **泛化性**：不同网站响应风格可通过三层规则命中避免误罚。
 
+### 7.6 Layer3 量化办法（分桶对照 + 可观测增益）
+
+Layer3 不再依赖 `validation_hops` 做远程预期细分，而是采用**分桶对照 + 可观测增益**的方式做量化：
+
+1. **分桶键**
+   - `algorithm_stack + anti_replay + material_source + packaging`
+
+2. **每桶抽样**
+   - 每个桶尽量抽 `4` 个基样本；不足 4 个则全取。
+   - 优先覆盖多个桶，避免只在单一算法上放大样本。
+
+3. **对照与试验**
+   - 对照组：无夹层样本。
+   - 试验组：`HEADER_SIGN_LAYER` 样本。
+   - `ENCODING_LAYER` 仅作为边界样本，不作为主量化对象。
+
+4. **量化指标**
+   - `RejectLikeRate = (APP_INVALID_INPUT + APP_MISSING_DATA + APP_DECRYPT_FAIL + APP_REJECTED + HTTP_4XX) / 可发送场景数`
+   - `ISG = RejectLikeRate(interlayer) - RejectLikeRate(control)`
+
+5. **解释口径**
+   - 夹层信号只用于样本分层、可观测复杂度量化与报告解释。
+   - 远程预期仍保持通用规则，不因是否存在夹层而频繁改写。
+
+6. **三态公平计分（无夹层 / 夹层有效 / 夹层失效）**
+   - 状态定义：
+     - `no_interlayer`：端点无夹层信号，按常规规则计分。
+     - `interlayer_effective`：存在夹层信号，且关键场景全部通过。
+     - `interlayer_invalid`：存在夹层信号，关键场景中任一场景失败。
+   - 关键场景规则：当前对 `HEADER_SIGN_LAYER` 采用 `crypto_remove_security_field` 与 `crypto_signature_corruption`；只要出现一次 `matched=False`、`SKIPPED` 或 `LOCAL_FAILED`，即判定为 `interlayer_invalid`。
+   - 计分方式：不改 `expected_outcome.remote_response_modes`；仅在评分时消费夹层状态（状态乘子 + 端点级附加惩罚），保证与无夹层端点共用同一远程预期口径。
+
 ---
 
 ## 8. 图表输出
